@@ -126,12 +126,12 @@ function Sidebar({
   const [cfgPath, setCfgPath] = useState('regions.json');
   const [cfgMsg, setCfgMsg]   = useState('');
 
-  async function pickVideo() {
+  async function pickAndLoadVideo() {
     const path = await openDialog({
       title: 'Select Video',
       filters: [{ name: 'Video', extensions: ['mp4', 'mov', 'avi', 'mkv', 'm4v', 'webm'] }],
     });
-    if (path) { setVpath(path); }
+    if (path) { await onLoadVideo(path); }
   }
 
   async function pickConfigLoad() {
@@ -166,16 +166,14 @@ function Sidebar({
       {/* Video */}
       <Card>
         <CardTitle>Video</CardTitle>
-        <div className="flex gap-1.5">
-          <Input
-            type="text" value={vpath}
-            onChange={e => setVpath(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && onLoadVideo()}
-            placeholder="/path/to/video.mp4"
-          />
-          <Btn onClick={pickVideo} title="Browse">…</Btn>
-        </div>
-        <Btn variant="primary" full onClick={onLoadVideo}>Load video</Btn>
+        <Btn variant="primary" full onClick={pickAndLoadVideo}>
+          {vpath ? '⟳ Change video…' : 'Select video…'}
+        </Btn>
+        {vpath && (
+          <span className="text-[11px] text-gray-500 truncate" title={vpath}>
+            {vpath.split(/[\\/]/).pop()}
+          </span>
+        )}
         {vinfo && (
           <span className="text-[11px] text-gray-400">
             {vinfo.width}×{vinfo.height} · {vinfo.fps.toFixed(1)} fps · {vinfo.duration.toFixed(1)}s
@@ -581,10 +579,12 @@ export default function App() {
 
   const canvasRef = useRef(null);
 
-  async function loadVideo() {
-    if (!vpath.trim()) return;
+  async function loadVideo(path) {
+    const p = (path ?? vpath).trim();
+    if (!p) return;
     try {
-      const info = await invoke('get_video_info', { path: vpath });
+      const info = await invoke('get_video_info', { path: p });
+      setVpath(p);
       setVinfo(info);
       setTs(0);
     } catch (e) {
