@@ -1,6 +1,10 @@
 use crate::config::RegionConfig;
-use crate::oar::build_pipeline;
-use crate::ocr::read_region;
+use crate::ocr::{
+    oar::{build_pipeline, ColorMode, OarRecognizer},
+    read_region,
+    tesseract::{Preprocess, TesseractRecognizer},
+    Recognizer,
+};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::sync::{
@@ -36,8 +40,8 @@ pub struct ExtractParams {
     pub output_path: String,
     pub use_gpu: bool,
     pub backend: String,
-    /// Confidence threshold (0.0–1.0) above which oar-ocr result is accepted
-    /// immediately without running Tesseract.  Defaults to 0.9 (90 %).
+    /// Confidence threshold (0.0–1.0): if the best oar-ocr result is at or
+    /// above this value the Tesseract engines are skipped.  Defaults to 0.9.
     #[serde(default = "default_oar_threshold")]
     pub oar_confidence_threshold: f64,
 }
@@ -50,20 +54,20 @@ pub struct Measurement {
     pub value: String,
     pub confidence: f64,
     pub raw_text: String,
-    pub source: String,  // "tesseract" or "oar-ocr"
+    pub source: String,
 }
 
 #[derive(Debug, Serialize, Clone)]
 pub struct ExtractProgress {
     pub frame: u64,
-    pub total: u64,   // total steps between first and last keyframe
+    pub total: u64,
     pub timestamp: f64,
     pub region_name: String,
     pub value: String,
     pub confidence: f64,
     pub elapsed_frames: u64,
     pub ocr_preview: String,
-    pub source: String,  // "tesseract" or "oar-ocr"
+    pub source: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -80,18 +84,11 @@ pub async fn extract(
 ) -> Result<ExtractResult, String> {
     use crate::video::get_video_info;
 
-    // Require at least two keyframes
     if params.config.keyframes.len() < 2 {
         return Err("At least 2 keyframes are required to run extraction.".to_string());
     }
 
-    // Determine the frame range from the first and last keyframe timestamps
-    let mut kf_ts: Vec<f64> = params
-        .config
-        .keyframes
-        .iter()
-        .map(|kf| kf.timestamp)
-        .collect();
+    let mut kf_ts: Vec<f64> = params.config.keyframes.iter().map(|kf| kf.timestamp).collect();
     kf_ts.sort_by(|a, b| a.partial_cmp(b).unwrap());
     let first_ts = kf_ts[0];
     let last_ts  = *kf_ts.last().unwrap();
@@ -104,55 +101,87 @@ pub async fn extract(
     let last_frame  = (last_ts  * fps).round() as u64;
     let total_steps = (last_frame.saturating_sub(first_frame)) / fps_sample + 1;
 
-    // Try to build the oar-ocr pipeline from bundled model files.
+    // ── Build OCR engine lists ────────────────────────────────────────────────
     //
-    // Path resolution:
-    //   dev build  → src-tauri/models/  (CARGO_MANIFEST_DIR, baked in at compile time)
-    //   production → <resource_dir>/models/  (Tauri bundle resource directory)
+    // `priority` engines (oar-ocr variants) run first on every region.
+    //   → If the best result exceeds `oar_confidence_threshold` the
+    //     `fallback` engines (Tesseract variants) are skipped entirely.
     //
-    // If any model file is absent the pipeline is silently skipped.
-    let oar_pipeline = {
-        use tauri::Manager as _;
+    // `fallback` engines only run when oar-ocr is not confident enough.
+    //
+    // To add a new OCR backend: implement `Recognizer` in `src/ocr/<backend>.rs`
+    // and push a `Box<dyn Recognizer>` into one of the two lists here.
 
-        // Candidate directories in preference order.
-        let candidates: &[std::path::PathBuf] = &[
-            // Dev: models/ sits next to Cargo.toml in src-tauri/
+    // Priority: oar-ocr (RGB input + grayscale input)
+    let priority_engines: Vec<Box<dyn Recognizer>> = {
+        // Locate bundled model files.
+        // Dev: src-tauri/models/ (baked in via CARGO_MANIFEST_DIR).
+        // Prod: Tauri resource directory.
+        use tauri::Manager as _;
+        let candidates = [
             std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("models"),
-            // Production: bundled resource directory
             app.path()
                 .resource_dir()
                 .map(|d| d.join("models"))
                 .unwrap_or_default(),
         ];
 
-        let mut found_dir: Option<&std::path::Path> = None;
-        for dir in candidates {
-            if dir.join("pp-ocrv5_mobile_rec.onnx").exists()
-                && dir.join("ppocrv5_dict.txt").exists()
-            {
-                found_dir = Some(dir.as_path());
-                break;
-            }
-        }
+        let found = candidates.iter().find(|d| {
+            d.join("pp-ocrv5_mobile_rec.onnx").exists() && d.join("ppocrv5_dict.txt").exists()
+        });
 
-        if let Some(dir) = found_dir {
+        if let Some(dir) = found {
             let rec  = dir.join("pp-ocrv5_mobile_rec.onnx");
             let dict = dir.join("ppocrv5_dict.txt");
-            match build_pipeline(
-                rec.to_str().unwrap_or(""),
-                dict.to_str().unwrap_or(""),
-            ) {
-                Ok(p)  => { eprintln!("oar-ocr pipeline ready (models: {dir:?})"); Some(p) }
-                Err(e) => { eprintln!("oar-ocr init failed: {e}"); None }
+            match build_pipeline(rec.to_str().unwrap_or(""), dict.to_str().unwrap_or("")) {
+                Ok(pipeline) => {
+                    eprintln!("oar-ocr pipeline ready (models: {dir:?})");
+                    let pipeline = Arc::new(pipeline);
+                    vec![
+                        Box::new(OarRecognizer { pipeline: pipeline.clone(), color_mode: ColorMode::Rgb })
+                            as Box<dyn Recognizer>,
+                        Box::new(OarRecognizer { pipeline, color_mode: ColorMode::Grayscale }),
+                    ]
+                }
+                Err(e) => {
+                    eprintln!("oar-ocr init failed: {e}");
+                    vec![]
+                }
             }
         } else {
-            eprintln!("oar-ocr models not found in any candidate directory — Tesseract only");
-            None
+            eprintln!("oar-ocr models not found — Tesseract only");
+            vec![]
         }
     };
-    let oar_ref = oar_pipeline.as_ref();
 
-    // Clone the Arc so we own the flag for the duration of the loop
+    // Fallback: Tesseract (binary + gray preprocessing when enabled, plus raw RGB always)
+    let fallback_engines: Vec<Box<dyn Recognizer>> = {
+        let mut v: Vec<Box<dyn Recognizer>> = Vec::new();
+        if params.preprocess {
+            v.push(Box::new(TesseractRecognizer {
+                languages: params.languages.clone(),
+                preprocess: Preprocess::Binary,
+            }));
+            v.push(Box::new(TesseractRecognizer {
+                languages: params.languages.clone(),
+                preprocess: Preprocess::Gray,
+            }));
+        } else {
+            v.push(Box::new(TesseractRecognizer {
+                languages: params.languages.clone(),
+                preprocess: Preprocess::RawGray,
+            }));
+        }
+        // Raw RGB is always included as an additional Tesseract variant
+        v.push(Box::new(TesseractRecognizer {
+            languages: params.languages.clone(),
+            preprocess: Preprocess::RawRgb,
+        }));
+        v
+    };
+
+    // ── Frame loop ────────────────────────────────────────────────────────────
+
     let flag = cancel.0.clone();
     flag.store(false, Ordering::Relaxed);
 
@@ -160,9 +189,6 @@ pub async fn extract(
     let mut elapsed: u64 = 0;
     let mut frame_num = first_frame;
 
-    // Frames are processed sequentially.
-    // Within each frame, all regions × preprocessing variants × PSM modes
-    // run in parallel via rayon (regions.par_iter + rayon::join + PSM par_iter).
     while frame_num <= last_frame {
         if flag.load(Ordering::Relaxed) {
             break;
@@ -177,21 +203,12 @@ pub async fn extract(
             continue;
         }
 
-        let (frame_bytes, fw, fh) = match crate::video::decode_frame_at(
-            &params.video_path,
-            timestamp,
-        ) {
-            Ok(t) => t,
-            Err(_) => {
-                elapsed += 1;
-                frame_num += fps_sample;
-                continue;
-            }
+        let (frame_bytes, fw, fh) = match crate::video::decode_frame_at(&params.video_path, timestamp) {
+            Ok(t)  => t,
+            Err(_) => { elapsed += 1; frame_num += fps_sample; continue; }
         };
 
-        // Process all regions for this frame in parallel.
-        // read_region itself uses rayon::join for the two preprocessing variants
-        // and par_iter for the four PSM modes — giving full parallelism within the frame.
+        // All regions for this frame run in parallel.
         let frame_ms: Vec<Measurement> = regions
             .par_iter()
             .map(|region| {
@@ -203,10 +220,9 @@ pub async fn extract(
                     region.y.max(0) as u32,
                     region.width.max(0) as u32,
                     region.height.max(0) as u32,
-                    &params.languages,
-                    params.preprocess,
+                    &priority_engines,
+                    &fallback_engines,
                     params.filter_numeric,
-                    oar_ref,
                     params.oar_confidence_threshold,
                 );
 
@@ -242,10 +258,9 @@ pub async fn extract(
         frame_num += fps_sample;
     }
 
-    // Build CSV
-    let mut csv = String::from(
-        "timestamp,frame_number,region_name,value,confidence,raw_text,source\n",
-    );
+    // ── CSV output ────────────────────────────────────────────────────────────
+
+    let mut csv = String::from("timestamp,frame_number,region_name,value,confidence,raw_text,source\n");
     for m in &measurements {
         csv.push_str(&format!(
             "{},{},{},{},{:.4},{},{}\n",
@@ -254,7 +269,6 @@ pub async fn extract(
         ));
     }
 
-    // Write CSV to disk (best-effort)
     if let Some(parent) = std::path::Path::new(&params.output_path).parent() {
         let _ = std::fs::create_dir_all(parent);
     }

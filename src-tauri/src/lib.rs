@@ -1,5 +1,4 @@
 mod config;
-mod oar;
 mod ocr;
 mod processor;
 mod video;
