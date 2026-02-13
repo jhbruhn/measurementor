@@ -1,0 +1,20 @@
+@import "tailwindcss";
+
+html, body, #root { height: 100%; margin: 0; padding: 0; }
+
+@theme {
+  --color-brand: #1a1a2e;
+  --color-brand-hover: #2d2d5e;
+}
+
+/* Seek bar tick marks — positional, not doable with pure Tailwind */
+.seek-tick {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  transform: translateX(-50%);
+  background: var(--color-brand);
+  border-radius: 1px;
+  opacity: 0.6;
+}
