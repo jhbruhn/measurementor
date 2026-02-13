@@ -224,15 +224,19 @@ const CanvasPanel = forwardRef(function CanvasPanel(
   useEffect(() => {
     if (!vpath || !vinfo) { bgImgRef.current = null; draw(); return; }
     let cancelled = false;
-    invoke('get_frame', { path: vpath, timestamp: ts })
-      .then(base64 => {
-        if (cancelled) return;
-        const img = new Image();
-        img.onload = () => { bgImgRef.current = img; draw(); };
-        img.src = `data:image/png;base64,${base64}`;
-      })
-      .catch(() => { bgImgRef.current = null; draw(); });
-    return () => { cancelled = true; };
+    // Debounce: wait 120 ms before firing so rapid seeks (e.g. scrubbing)
+    // don't flood the backend with frame-decode requests.
+    const timer = setTimeout(() => {
+      invoke('get_frame', { path: vpath, timestamp: ts })
+        .then(base64 => {
+          if (cancelled) return;
+          const img = new Image();
+          img.onload = () => { bgImgRef.current = img; draw(); };
+          img.src = `data:image/png;base64,${base64}`;
+        })
+        .catch(() => { bgImgRef.current = null; draw(); });
+    }, 120);
+    return () => { cancelled = true; clearTimeout(timer); };
   }, [ts, vpath, vinfo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { draw(); }, [draw]);

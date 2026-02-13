@@ -36,6 +36,7 @@ pub fn get_video_info(path: String) -> Result<VideoInfo, String> {
         if r.1 != 0 && r.0 > 0 {
             r.0 as f64 / r.1 as f64
         } else {
+            eprintln!("warning: could not read FPS from '{path}', defaulting to 30");
             30.0
         }
     };
@@ -139,16 +140,31 @@ pub fn decode_frame_at(path: &str, timestamp: f64) -> Result<(Vec<u8>, u32, u32)
     }
 
     // Copy RGB data, stripping per-row padding if the stride > row width.
-    let stride = rgb_frame.stride(0);
+    let stride    = rgb_frame.stride(0);
     let row_bytes = width as usize * 3;
-    let data = rgb_frame.data(0);
+    let data      = rgb_frame.data(0);
 
     let rgb = if stride == row_bytes {
-        data[..row_bytes * height as usize].to_vec()
+        let expected = row_bytes * height as usize;
+        if data.len() < expected {
+            return Err(format!(
+                "frame buffer too small: {} bytes < {} expected ({}×{}×3)",
+                data.len(), expected, width, height
+            ));
+        }
+        data[..expected].to_vec()
     } else {
         let mut flat = Vec::with_capacity(row_bytes * height as usize);
         for row in 0..height as usize {
-            flat.extend_from_slice(&data[row * stride..row * stride + row_bytes]);
+            let start = row * stride;
+            let end   = start + row_bytes;
+            if end > data.len() {
+                return Err(format!(
+                    "frame row {row} out of bounds (stride={stride}, data.len()={})",
+                    data.len()
+                ));
+            }
+            flat.extend_from_slice(&data[start..end]);
         }
         flat
     };

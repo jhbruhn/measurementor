@@ -307,6 +307,8 @@ function ExtractTab({ vpath, vinfo, keyframes }) {
   async function startExtract() {
     if (keyframes.length < 2) { alert('Define at least 2 keyframes before extracting.'); return; }
     if (!vpath)               { alert('Load a video first.'); return; }
+    const uniqueTs = new Set(keyframes.map(k => k.timestamp));
+    if (uniqueTs.size < 2)    { alert('Keyframes must have different timestamps.'); return; }
 
     setRunning(true);
     setResults(null);
@@ -318,19 +320,25 @@ function ExtractTab({ vpath, vinfo, keyframes }) {
 
     unlistenRef.current = await listen('extraction_progress', event => {
       const p = event.payload;
-      setProgress(p);
-      if (p.ocr_preview) {
-        setLastPreviews(prev => ({
-          ...prev,
-          [p.region_name]: { preview: p.ocr_preview, value: p.value, confidence: p.confidence, source: p.source },
-        }));
-      }
-      // Build / update the pivot row for this frame
-      setLiveData(prev => {
-        const row = prev[p.frame] ?? { frame: p.frame, timestamp: p.timestamp };
-        return { ...prev, [p.frame]: { ...row, [p.region_name]: { value: p.value, confidence: p.confidence, source: p.source } } };
+      // p.regions is an array — one entry per region in this frame
+      setProgress({ elapsed_frames: p.elapsed_frames, total: p.total });
+      setLastPreviews(prev => {
+        const next = { ...prev };
+        p.regions.forEach(r => {
+          next[r.region_name] = { preview: r.ocr_preview, value: r.value, confidence: r.confidence, source: r.source };
+        });
+        return next;
       });
-      setLiveRegions(prev => prev.includes(p.region_name) ? prev : [...prev, p.region_name]);
+      setLiveData(prev => {
+        const row = { ...(prev[p.frame] ?? {}), frame: p.frame, timestamp: p.timestamp };
+        p.regions.forEach(r => { row[r.region_name] = { value: r.value, confidence: r.confidence, source: r.source }; });
+        return { ...prev, [p.frame]: row };
+      });
+      setLiveRegions(prev => {
+        const seen = new Set(prev);
+        p.regions.forEach(r => seen.add(r.region_name));
+        return seen.size === prev.length ? prev : [...seen];
+      });
     });
 
     try {
@@ -341,7 +349,7 @@ function ExtractTab({ vpath, vinfo, keyframes }) {
           fps_sample: fpsSample,
           preprocess,
           filter_numeric: filterNumeric,
-          languages: lang.split(',').map(s => s.trim()),
+          languages: lang.split(',').map(s => s.trim()).filter(Boolean),
           output_path: outPath,
           use_gpu: false,
           backend: '',

@@ -16,11 +16,12 @@ pub struct OcrResult {
 }
 
 /// Every OCR backend implements this.
-/// `recognize` receives the pre-cropped RGB image; all preprocessing is the
-/// engine's own responsibility.
+/// `recognize` receives the pre-cropped RGB image by reference so the caller
+/// does not have to clone the frame buffer for each engine.
+/// Engines clone internally only what they actually need for preprocessing.
 pub trait Recognizer: Send + Sync {
     fn name(&self) -> &str;
-    fn recognize(&self, crop: DynamicImage) -> Option<OcrResult>;
+    fn recognize(&self, crop: &DynamicImage) -> Option<OcrResult>;
 }
 
 // ── Orchestration ────────────────────────────────────────────────────────────
@@ -59,7 +60,7 @@ pub fn read_region(
     // ── Step 1: priority engines (fast path) ─────────────────────────────────
     let mut priority_results: Vec<OcrResult> = priority
         .par_iter()
-        .filter_map(|e| e.recognize(crop_dyn.clone()))
+        .filter_map(|e| e.recognize(&crop_dyn))
         .collect();
 
     // Check whether the best priority result is confident enough to skip fallback.
@@ -77,7 +78,7 @@ pub fn read_region(
     // ── Step 2: fallback engines ──────────────────────────────────────────────
     let fallback_results: Vec<OcrResult> = fallback
         .par_iter()
-        .filter_map(|e| e.recognize(crop_dyn.clone()))
+        .filter_map(|e| e.recognize(&crop_dyn))
         .collect();
 
     // Debug log all candidates

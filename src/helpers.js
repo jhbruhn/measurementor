@@ -107,10 +107,3 @@ export function interpolate(keyframes, ts) {
   return res;
 }
 
-/** Fetch wrapper — throws on HTTP error. */
-export async function api(url, opts) {
-  const r = await fetch(url, opts);
-  const j = await r.json();
-  if (!r.ok) throw new Error(j.error || 'Request failed');
-  return j;
-}

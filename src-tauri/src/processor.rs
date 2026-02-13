@@ -57,17 +57,24 @@ pub struct Measurement {
     pub source: String,
 }
 
+/// Per-region result emitted inside each frame progress event.
+#[derive(Debug, Serialize, Clone)]
+pub struct RegionProgress {
+    pub region_name: String,
+    pub value: String,
+    pub confidence: f64,
+    pub ocr_preview: String,
+    pub source: String,
+}
+
+/// One event emitted per frame (contains all regions, not one per region).
 #[derive(Debug, Serialize, Clone)]
 pub struct ExtractProgress {
     pub frame: u64,
     pub total: u64,
     pub timestamp: f64,
-    pub region_name: String,
-    pub value: String,
-    pub confidence: f64,
     pub elapsed_frames: u64,
-    pub ocr_preview: String,
-    pub source: String,
+    pub regions: Vec<RegionProgress>,
 }
 
 #[derive(Debug, Serialize)]
@@ -185,6 +192,9 @@ pub async fn extract(
     let flag = cancel.0.clone();
     flag.store(false, Ordering::Relaxed);
 
+    // Clamp threshold to [0, 1] — invalid values from the frontend become safe defaults.
+    let oar_threshold = params.oar_confidence_threshold.clamp(0.0, 1.0);
+
     let mut measurements: Vec<Measurement> = Vec::new();
     let mut elapsed: u64 = 0;
     let mut frame_num = first_frame;
@@ -204,12 +214,17 @@ pub async fn extract(
         }
 
         let (frame_bytes, fw, fh) = match crate::video::decode_frame_at(&params.video_path, timestamp) {
-            Ok(t)  => t,
-            Err(_) => { elapsed += 1; frame_num += fps_sample; continue; }
+            Ok(t) => t,
+            Err(e) => {
+                eprintln!("frame decode failed at {timestamp:.3}s: {e}");
+                elapsed += 1;
+                frame_num += fps_sample;
+                continue;
+            }
         };
 
-        // All regions for this frame run in parallel.
-        let frame_ms: Vec<Measurement> = regions
+        // Run OCR for all regions in parallel, producing (Measurement, RegionProgress) pairs.
+        let outcomes: Vec<(Measurement, RegionProgress)> = regions
             .par_iter()
             .map(|region| {
                 let (value, confidence, raw_text, ocr_preview, source) = read_region(
@@ -223,37 +238,42 @@ pub async fn extract(
                     &priority_engines,
                     &fallback_engines,
                     params.filter_numeric,
-                    params.oar_confidence_threshold,
+                    oar_threshold,
                 );
-
-                let _ = app.emit(
-                    "extraction_progress",
-                    ExtractProgress {
-                        frame: frame_num,
-                        total: total_steps,
+                (
+                    Measurement {
                         timestamp,
+                        frame_number: frame_num,
                         region_name: region.name.clone(),
                         value: value.clone(),
                         confidence,
-                        elapsed_frames: elapsed,
-                        ocr_preview,
+                        raw_text,
                         source: source.clone(),
                     },
-                );
-
-                Measurement {
-                    timestamp,
-                    frame_number: frame_num,
-                    region_name: region.name.clone(),
-                    value,
-                    confidence,
-                    raw_text,
-                    source,
-                }
+                    RegionProgress {
+                        region_name: region.name.clone(),
+                        value,
+                        confidence,
+                        ocr_preview,
+                        source,
+                    },
+                )
             })
             .collect();
 
-        measurements.extend(frame_ms);
+        // Emit one batched event for the entire frame (reduces IPC calls by N_regions).
+        let _ = app.emit(
+            "extraction_progress",
+            ExtractProgress {
+                frame: frame_num,
+                total: total_steps,
+                timestamp,
+                elapsed_frames: elapsed,
+                regions: outcomes.iter().map(|(_, rp)| rp.clone()).collect(),
+            },
+        );
+
+        measurements.extend(outcomes.into_iter().map(|(m, _)| m));
         elapsed += 1;
         frame_num += fps_sample;
     }

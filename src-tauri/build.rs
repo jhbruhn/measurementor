@@ -16,8 +16,11 @@ const MODELS: &[&str] = &[
 ];
 
 fn download_models() {
-    let models_dir = std::path::Path::new("models");
-    std::fs::create_dir_all(models_dir).expect("could not create models/");
+    // Use CARGO_MANIFEST_DIR (= src-tauri/) so the path is correct regardless
+    // of where `cargo build` is invoked from.
+    let manifest = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
+    let models_dir = std::path::Path::new(&manifest).join("models");
+    std::fs::create_dir_all(&models_dir).expect("could not create models/");
 
     for filename in MODELS {
         let dest = models_dir.join(filename);

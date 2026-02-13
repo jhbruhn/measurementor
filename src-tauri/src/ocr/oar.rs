@@ -52,7 +52,7 @@ impl Recognizer for OarRecognizer {
         }
     }
 
-    fn recognize(&self, crop: DynamicImage) -> Option<OcrResult> {
+    fn recognize(&self, crop: &DynamicImage) -> Option<OcrResult> {
         // Prepare the image in the requested colour space
         let img = match self.color_mode {
             ColorMode::Rgb       => crop.to_rgb8(),

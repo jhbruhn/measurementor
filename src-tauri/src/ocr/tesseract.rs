@@ -15,6 +15,16 @@ const PSMS: &[PageSegMode] = &[
     PageSegMode::PsmRawLine,
 ];
 
+/// Upscale factor applied before Tesseract to improve recognition on small crops.
+const UPSCALE_FACTOR: u32 = 6;
+/// Threshold for binary preprocessing: pixels above this become white, below become black.
+const BINARY_THRESHOLD: u8 = 100;
+/// Mean pixel brightness below which a crop is assumed to have a dark background
+/// and needs auto-inversion before OCR.
+const DARK_BG_THRESHOLD: u64 = 140;
+/// White border added after preprocessing to help Tesseract locate the text block.
+const BORDER_PAD: u32 = 15;
+
 /// How to prepare the crop before handing it to Tesseract.
 pub enum Preprocess {
     /// 6× upscale → grayscale → auto-invert → hist-eq → blur → binary threshold.
@@ -42,55 +52,60 @@ impl Recognizer for TesseractRecognizer {
         }
     }
 
-    fn recognize(&self, crop: DynamicImage) -> Option<OcrResult> {
+    fn recognize(&self, crop: &DynamicImage) -> Option<OcrResult> {
         let lang = build_lang(&self.languages);
         match self.preprocess {
-            Preprocess::RawRgb => run_rgb(crop.to_rgb8(), &lang, self.name()),
-            _                  => run_gray(self.prepare_gray(crop), &lang, self.name()),
+            Preprocess::RawRgb => {
+                let img = crop.to_rgb8();
+                run_ocr_bytes(img.as_raw(), img.width(), img.height(), 3, &lang, self.name())
+            }
+            _ => {
+                let img = self.prepare_gray(crop);
+                run_ocr_bytes(img.as_raw(), img.width(), img.height(), 1, &lang, self.name())
+            }
         }
     }
 }
 
 impl TesseractRecognizer {
-    fn prepare_gray(&self, crop: DynamicImage) -> GrayImage {
+    fn prepare_gray(&self, crop: &DynamicImage) -> GrayImage {
         match self.preprocess {
-            Preprocess::Binary  => preprocess_bw(crop, true),
-            Preprocess::Gray    => preprocess_bw(crop, false),
+            Preprocess::Binary  => preprocess_bw(crop.clone(), true),
+            Preprocess::Gray    => preprocess_bw(crop.clone(), false),
             Preprocess::RawGray => crop.to_luma8(),
             Preprocess::RawRgb  => unreachable!(),
         }
     }
 }
 
-fn run_gray(img: GrayImage, lang: &str, name: &str) -> Option<OcrResult> {
-    let (iw, ih) = (img.width(), img.height());
-    let bytes = img.into_raw();
-    let (text, confidence) = run_psms(&bytes, iw, ih, lang, 1)?;
-    Some(OcrResult {
-        text,
-        confidence,
-        preview_b64: encode_png(&bytes, iw, ih, image::ExtendedColorType::L8),
-        engine_name: name.to_string(),
-    })
-}
-
-fn run_rgb(img: RgbImage, lang: &str, name: &str) -> Option<OcrResult> {
-    let (iw, ih) = (img.width(), img.height());
-    let bytes = img.into_raw();
-    let (text, confidence) = run_psms(&bytes, iw, ih, lang, 3)?;
-    Some(OcrResult {
-        text,
-        confidence,
-        preview_b64: encode_png(&bytes, iw, ih, image::ExtendedColorType::Rgb8),
-        engine_name: name.to_string(),
-    })
-}
-
-/// Run all `PSMS` in parallel and return the highest-confidence result.
-fn run_psms(bytes: &[u8], w: u32, h: u32, lang: &str, bpp: i32) -> Option<(String, f64)> {
-    PSMS.par_iter()
+/// Run all PSMs in parallel on raw bytes, build OcrResult from the best outcome.
+/// `bpp` = bytes-per-pixel (1 for grayscale, 3 for RGB).
+fn run_ocr_bytes(
+    bytes: &[u8],
+    w: u32,
+    h: u32,
+    bpp: i32,
+    lang: &str,
+    engine_name: &str,
+) -> Option<OcrResult> {
+    let (text, confidence) = PSMS
+        .par_iter()
         .filter_map(|&psm| try_ocr(bytes, w, h, lang, psm, bpp).ok())
-        .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+        .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))?;
+
+    let color = if bpp == 1 {
+        image::ExtendedColorType::L8
+    } else {
+        image::ExtendedColorType::Rgb8
+    };
+    let preview_b64 = encode_png(bytes, w, h, color);
+
+    Some(OcrResult {
+        text,
+        confidence,
+        preview_b64,
+        engine_name: engine_name.to_string(),
+    })
 }
 
 /// Call Tesseract for one PSM.
@@ -121,21 +136,21 @@ fn try_ocr(
 }
 
 /// Full preprocessing pipeline.
-/// `binarize = true`  → add binary threshold at the end (sharper, fewer shades).
-/// `binarize = false` → stop at enhanced grayscale (softer, more detail).
+/// `binarize = true`  → add binary threshold at the end.
+/// `binarize = false` → stop at enhanced grayscale.
 ///
-/// Pipeline: 6× Lanczos upscale → grayscale → auto-invert dark bg →
+/// Pipeline: Lanczos `UPSCALE_FACTOR`× → grayscale → auto-invert dark bg →
 ///           histogram equalisation → σ=1.0 Gaussian blur →
-///           (optional binary threshold) → 15 px white border.
+///           (optional binary threshold) → `BORDER_PAD` px white border.
 fn preprocess_bw(img: DynamicImage, binarize: bool) -> GrayImage {
     let (w, h) = img.dimensions();
-    let scaled = img.resize(w * 6, h * 6, image::imageops::FilterType::Lanczos3);
+    let scaled = img.resize(w * UPSCALE_FACTOR, h * UPSCALE_FACTOR, image::imageops::FilterType::Lanczos3);
     let mut gray = scaled.to_luma8();
 
     // Auto-invert if background is dark
-    let mean: u64 = gray.pixels().map(|p| p[0] as u64).sum::<u64>()
-        / (gray.width() * gray.height()).max(1) as u64;
-    if mean < 140 {
+    let px_count = (gray.width() * gray.height()).max(1) as u64;
+    let mean: u64 = gray.pixels().map(|p| p[0] as u64).sum::<u64>() / px_count;
+    if mean < DARK_BG_THRESHOLD {
         for p in gray.pixels_mut() {
             p[0] = 255 - p[0];
         }
@@ -146,15 +161,16 @@ fn preprocess_bw(img: DynamicImage, binarize: bool) -> GrayImage {
 
     if binarize {
         for p in gray.pixels_mut() {
-            p[0] = if p[0] > 100 { 255 } else { 0 };
+            p[0] = if p[0] > BINARY_THRESHOLD { 255 } else { 0 };
         }
     }
 
-    // Add white border (improves Tesseract's text-block detection)
-    let pad = 15u32;
+    // White border — use saturating_add to prevent overflow on large images
     let (gw, gh) = gray.dimensions();
-    let mut padded = GrayImage::from_pixel(gw + pad * 2, gh + pad * 2, Luma([255u8]));
-    image::imageops::overlay(&mut padded, &gray, pad as i64, pad as i64);
+    let padded_w = gw.saturating_add(BORDER_PAD * 2);
+    let padded_h = gh.saturating_add(BORDER_PAD * 2);
+    let mut padded = GrayImage::from_pixel(padded_w, padded_h, Luma([255u8]));
+    image::imageops::overlay(&mut padded, &gray, BORDER_PAD as i64, BORDER_PAD as i64);
     padded
 }
 

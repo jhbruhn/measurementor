@@ -24,14 +24,28 @@ pub struct RegionConfig {
 }
 
 impl RegionConfig {
+    /// Sort keyframes ascending by timestamp.
+    /// Call this once after construction/deserialization so `get_regions_at`
+    /// can skip the per-call clone + sort.
+    pub fn sort_keyframes(&mut self) {
+        self.keyframes.sort_by(|a, b| {
+            a.timestamp
+                .partial_cmp(&b.timestamp)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+    }
+
     /// Linearly interpolate region positions at the given timestamp.
-    /// Mirrors the Python RegionConfig.get_regions_at() behaviour.
+    /// **Requires keyframes to be sorted** — call `sort_keyframes()` first.
+    ///
+    /// Regions that exist in both surrounding keyframes are interpolated.
+    /// Regions that exist only in the earlier keyframe keep that position.
+    /// Regions that exist only in the later keyframe appear at their position.
     pub fn get_regions_at(&self, ts: f64) -> Vec<Region> {
-        let mut kfs = self.keyframes.clone();
+        let kfs = &self.keyframes;
         if kfs.is_empty() {
             return vec![];
         }
-        kfs.sort_by(|a, b| a.timestamp.partial_cmp(&b.timestamp).unwrap());
 
         if ts <= kfs[0].timestamp {
             return kfs[0].regions.clone();
@@ -45,25 +59,45 @@ impl RegionConfig {
             let b = &kfs[i + 1];
             if a.timestamp <= ts && ts <= b.timestamp {
                 let t = (ts - a.timestamp) / (b.timestamp - a.timestamp);
-                let b_map: std::collections::HashMap<&str, &Region> =
-                    b.regions.iter().map(|r| (r.name.as_str(), r)).collect();
-                return a
-                    .regions
-                    .iter()
-                    .map(|ra| {
-                        let rb = b_map.get(ra.name.as_str()).copied().unwrap_or(ra);
-                        Region {
-                            name: ra.name.clone(),
-                            x:      lerp_i32(ra.x,      rb.x,      t),
-                            y:      lerp_i32(ra.y,      rb.y,      t),
-                            width:  lerp_i32(ra.width,  rb.width,  t),
-                            height: lerp_i32(ra.height, rb.height, t),
-                        }
-                    })
-                    .collect();
+                return interpolate_keyframes(a, b, t);
             }
         }
+
         vec![]
+    }
+}
+
+/// Interpolate all regions between two keyframes.
+/// Regions present in both are lerped; regions only in `a` keep `a`'s position;
+/// regions only in `b` keep `b`'s position.
+fn interpolate_keyframes(a: &Keyframe, b: &Keyframe, t: f64) -> Vec<Region> {
+    use std::collections::HashMap;
+
+    let a_map: HashMap<&str, &Region> = a.regions.iter().map(|r| (r.name.as_str(), r)).collect();
+    let b_map: HashMap<&str, &Region> = b.regions.iter().map(|r| (r.name.as_str(), r)).collect();
+
+    let mut result: Vec<Region> = a.regions.iter().map(|ra| {
+        let rb = b_map.get(ra.name.as_str()).copied().unwrap_or(ra);
+        lerp_region(ra, rb, t)
+    }).collect();
+
+    // Include regions that only exist in `b` (added at this keyframe)
+    for rb in &b.regions {
+        if !a_map.contains_key(rb.name.as_str()) {
+            result.push(rb.clone());
+        }
+    }
+
+    result
+}
+
+fn lerp_region(a: &Region, b: &Region, t: f64) -> Region {
+    Region {
+        name:   a.name.clone(),
+        x:      lerp_i32(a.x,      b.x,      t),
+        y:      lerp_i32(a.y,      b.y,      t),
+        width:  lerp_i32(a.width,  b.width,  t),
+        height: lerp_i32(a.height, b.height, t),
     }
 }
 
@@ -74,7 +108,10 @@ fn lerp_i32(a: i32, b: i32, t: f64) -> i32 {
 #[tauri::command]
 pub fn load_config(path: String) -> Result<RegionConfig, String> {
     let text = fs::read_to_string(&path).map_err(|e| format!("Cannot read {path}: {e}"))?;
-    serde_json::from_str(&text).map_err(|e| format!("Parse error in {path}: {e}"))
+    let mut cfg: RegionConfig =
+        serde_json::from_str(&text).map_err(|e| format!("Parse error in {path}: {e}"))?;
+    cfg.sort_keyframes();
+    Ok(cfg)
 }
 
 #[tauri::command]
