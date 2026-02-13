@@ -37,7 +37,6 @@ pub struct ExtractParams {
     pub preprocess: bool,
     pub filter_numeric: bool,
     pub languages: Vec<String>,
-    pub output_path: String,
     pub use_gpu: bool,
     pub backend: String,
     /// Confidence threshold (0.0–1.0): if the best oar-ocr result is at or
@@ -161,7 +160,15 @@ pub async fn extract(
         }
     };
 
-    // Fallback: Tesseract (binary + gray preprocessing when enabled, plus raw RGB always)
+    // Fallback: Tesseract variants (run when oar-ocr confidence is below threshold).
+    //
+    // When preprocessing is enabled:
+    //   • Binary  — full pipeline with Sauvola binarization + morph opening
+    //   • Gray    — same pipeline, stops at enhanced grayscale (no binarization)
+    //   • ChannelR/G/B — extract each colour channel independently, then Binary pipeline
+    //                    (helps with coloured digit displays: red LEDs, green LCDs, etc.)
+    // When preprocessing is disabled: RawGray (no upscaling, minimal cost).
+    // RawRgb is always included as a final Tesseract fallback.
     let fallback_engines: Vec<Box<dyn Recognizer>> = {
         let mut v: Vec<Box<dyn Recognizer>> = Vec::new();
         if params.preprocess {
@@ -172,6 +179,18 @@ pub async fn extract(
             v.push(Box::new(TesseractRecognizer {
                 languages: params.languages.clone(),
                 preprocess: Preprocess::Gray,
+            }));
+            v.push(Box::new(TesseractRecognizer {
+                languages: params.languages.clone(),
+                preprocess: Preprocess::ChannelR,
+            }));
+            v.push(Box::new(TesseractRecognizer {
+                languages: params.languages.clone(),
+                preprocess: Preprocess::ChannelG,
+            }));
+            v.push(Box::new(TesseractRecognizer {
+                languages: params.languages.clone(),
+                preprocess: Preprocess::ChannelB,
             }));
         } else {
             v.push(Box::new(TesseractRecognizer {
@@ -278,7 +297,7 @@ pub async fn extract(
         frame_num += fps_sample;
     }
 
-    // ── CSV output ────────────────────────────────────────────────────────────
+    // ── Build CSV string (not written to disk — user exports explicitly) ──────
 
     let mut csv = String::from("timestamp,frame_number,region_name,value,confidence,raw_text,source\n");
     for m in &measurements {
@@ -289,10 +308,15 @@ pub async fn extract(
         ));
     }
 
-    if let Some(parent) = std::path::Path::new(&params.output_path).parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-    let _ = std::fs::write(&params.output_path, &csv);
-
     Ok(ExtractResult { measurements, csv })
+}
+
+/// Write CSV content to the given path, creating parent directories if needed.
+#[tauri::command]
+pub fn save_csv(path: String, csv: String) -> Result<(), String> {
+    if let Some(parent) = std::path::Path::new(&path).parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("Cannot create directories: {e}"))?;
+    }
+    std::fs::write(&path, csv).map_err(|e| format!("Cannot write {path}: {e}"))
 }

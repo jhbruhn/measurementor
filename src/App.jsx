@@ -271,7 +271,6 @@ function confBar(c) {
 function ExtractTab({ vpath, vinfo, keyframes }) {
   const [fpsSample,   setFpsSample]   = useState(30);
   const [lang,        setLang]        = useState('en,de');
-  const [outPath,     setOutPath]     = useState('measurements.csv');
   const [preprocess,     setPreprocess]     = useState(true);
   const [filterNumeric,  setFilterNumeric]  = useState(true);
   const [oarThreshold,   setOarThreshold]   = useState(90);
@@ -289,15 +288,6 @@ function ExtractTab({ vpath, vinfo, keyframes }) {
   const nRegions = keyframes.length ? Math.max(...keyframes.map(k => k.regions.length), 0) : 0;
   const nFrames  = vinfo ? Math.floor(vinfo.total_frames / fpsSample) : 0;
 
-  async function pickOutput() {
-    const path = await saveDialog({
-      title: 'Save CSV',
-      defaultPath: outPath,
-      filters: [{ name: 'CSV', extensions: ['csv'] }],
-    });
-    if (path) setOutPath(path);
-  }
-
   async function cancelExtract() {
     try { await invoke('cancel_extract'); } catch (_) {}
   }
@@ -311,7 +301,7 @@ function ExtractTab({ vpath, vinfo, keyframes }) {
     setRunning(true);
     setResults(null);
     setCsvData(null);
-    setProgress({ frame: 0, total: nFrames, region_name: '…', value: '', elapsed_frames: 0 });
+    setProgress({ elapsed_frames: 0, total: nFrames });
     setLiveData({});
     setLiveRegions([]);
     setLastPreviews({});
@@ -348,7 +338,6 @@ function ExtractTab({ vpath, vinfo, keyframes }) {
           preprocess,
           filter_numeric: filterNumeric,
           languages: lang.split(',').map(s => s.trim()).filter(Boolean),
-          output_path: outPath,
           use_gpu: false,
           backend: '',
           oar_confidence_threshold: oarThreshold / 100,
@@ -366,12 +355,17 @@ function ExtractTab({ vpath, vinfo, keyframes }) {
     }
   }
 
-  function downloadCsv() {
+  async function exportCsv() {
     if (!csvData) return;
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([csvData], { type: 'text/csv' }));
-    a.download = outPath.split('/').pop().split('\\').pop() || 'measurements.csv';
-    a.click();
+    const path = await saveDialog({
+      title: 'Export CSV',
+      defaultPath: 'measurements.csv',
+      filters: [{ name: 'CSV', extensions: ['csv'] }],
+    });
+    if (path) {
+      try { await invoke('save_csv', { path, csv: csvData }); }
+      catch (e) { alert('Export failed: ' + e); }
+    }
   }
 
   const pct = progress && progress.total > 0
@@ -401,13 +395,6 @@ function ExtractTab({ vpath, vinfo, keyframes }) {
             </div>
           </div>
           <div className="flex flex-col gap-3">
-            <div>
-              <Label>Output CSV path</Label>
-              <div className="flex gap-1.5">
-                <Input type="text" value={outPath} onChange={e => setOutPath(e.target.value)} />
-                <Btn onClick={pickOutput} title="Browse">…</Btn>
-              </div>
-            </div>
             <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
               <input type="checkbox" checked={preprocess} onChange={e => setPreprocess(e.target.checked)}
                 className="accent-green-600" />
@@ -456,8 +443,7 @@ function ExtractTab({ vpath, vinfo, keyframes }) {
           </div>
           <div className="flex items-center justify-between text-xs text-gray-500 mt-1">
             <span>
-              {progress.region_name}
-              {progress.value ? ` → ${progress.value}` : ''}
+              Frame {progress.elapsed_frames} / {progress.total}
             </span>
             <span className="font-mono tabular-nums">{pct}%</span>
           </div>
@@ -505,7 +491,7 @@ function ExtractTab({ vpath, vinfo, keyframes }) {
             <CardTitle>
               {running ? `Live results — ${liveRows.length} frames` : `Results — ${liveRows.length} frames`}
             </CardTitle>
-            {csvData && <Btn onClick={downloadCsv}>↓ Download CSV</Btn>}
+            {csvData && <Btn onClick={exportCsv}>↓ Export CSV…</Btn>}
           </div>
           <div className="overflow-auto max-h-[32rem]">
             <table className="w-full text-xs border-collapse">
