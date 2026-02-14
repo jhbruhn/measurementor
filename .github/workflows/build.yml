@@ -104,7 +104,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # ── Rust / Node ─────────────────────────────────────────────────────────
+      # ── MSYS2 / MinGW64 ──────────────────────────────────────────────────────
+      # ffmpeg-sys-the-third `build` feature and kreuzberg-tesseract
+      # `static-linking` both compile C/C++ from source using configure+make /
+      # cmake.  ffmpeg-sys-the-third runs `Command::new(configure_path)` with no
+      # shell wrapper, so bash must be available in the process environment.
+      # Using MSYS2 MINGW64 and the x86_64-pc-windows-gnu Rust target satisfies
+      # both requirements: bash is in PATH and the static .a files produced by
+      # MinGW GCC are ABI-compatible with the GNU linker Rust uses for that target.
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: false
+          install: >-
+            nasm
+            make
+            mingw-w64-x86_64-toolchain
+            mingw-w64-x86_64-clang
+            mingw-w64-x86_64-cmake
+
+      # ── Rust / Node ──────────────────────────────────────────────────────────
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -112,6 +131,8 @@ jobs:
           cache-dependency-path: package-lock.json
 
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-gnu
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -121,20 +142,19 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
-      # ── Build ───────────────────────────────────────────────────────────────
+      # ── Build (inside MSYS2 so configure scripts can execute) ────────────────
       - name: Build Tauri app
-        shell: pwsh
-        run: npm run tauri build
+        shell: msys2 {0}
+        run: npm run tauri build -- --target x86_64-pc-windows-gnu
         env:
-          # bindgen (used by ffmpeg-sys-the-third) needs libclang.
-          # LLVM is pre-installed on windows-latest at this path.
-          LIBCLANG_PATH: C:\Program Files\LLVM\bin
+          # bindgen needs libclang; use the one from MSYS2 mingw64.
+          LIBCLANG_PATH: C:/msys64/mingw64/bin
 
       - name: Upload NSIS installer
         uses: actions/upload-artifact@v4
         with:
           name: Measurementor-windows-installer
-          path: src-tauri/target/release/bundle/nsis/*-setup.exe
+          path: src-tauri/target/x86_64-pc-windows-gnu/release/bundle/nsis/*-setup.exe
           if-no-files-found: error
 
   # ────────────────────────────────────────────────────────────────────────────
