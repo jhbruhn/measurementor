@@ -19,6 +19,7 @@
 !macro customUninstall
   ; Remove the DLLs that customInstall copied to $INSTDIR.
   ; Uses a wildcard per known prefix to avoid deleting unrelated user files.
+  ; FFmpeg
   Delete "$INSTDIR\avutil*.dll"
   Delete "$INSTDIR\avformat*.dll"
   Delete "$INSTDIR\avcodec*.dll"
@@ -26,6 +27,18 @@
   Delete "$INSTDIR\avdevice*.dll"
   Delete "$INSTDIR\swscale*.dll"
   Delete "$INSTDIR\swresample*.dll"
+  ; Tesseract + Leptonica
   Delete "$INSTDIR\tesseract*.dll"
   Delete "$INSTDIR\leptonica*.dll"
+  ; Leptonica image-format transitive deps
+  Delete "$INSTDIR\jpeg*.dll"
+  Delete "$INSTDIR\gif*.dll"
+  Delete "$INSTDIR\libpng*.dll"
+  Delete "$INSTDIR\tiff*.dll"
+  Delete "$INSTDIR\webp*.dll"
+  Delete "$INSTDIR\zlib*.dll"
+  Delete "$INSTDIR\archive*.dll"
+  Delete "$INSTDIR\libcurl*.dll"
+  Delete "$INSTDIR\liblzma*.dll"
+  Delete "$INSTDIR\bz2*.dll"
 !macroend
