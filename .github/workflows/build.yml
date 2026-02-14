@@ -94,6 +94,10 @@ jobs:
     env:
       # FFmpeg 7.x matches the Linux dev libs (libavcodec.so.61 etc.)
       FFMPEG_VERSION: "7.1"
+      # Enable vcpkg binary caching via GitHub Actions cache so compiled ports
+      # (tesseract and its deps) are restored on subsequent runs instead of
+      # being recompiled from source.
+      VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
 
     steps:
       - uses: actions/checkout@v4
