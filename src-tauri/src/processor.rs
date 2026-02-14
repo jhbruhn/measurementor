@@ -1,4 +1,5 @@
 use crate::config::RegionConfig;
+use std::collections::HashMap;
 use crate::ocr::{
     oar::{build_pipeline, ColorMode, OarRecognizer},
     read_region,
@@ -214,6 +215,9 @@ pub async fn extract(
     // Clamp threshold to [0, 1] — invalid values from the frontend become safe defaults.
     let oar_threshold = params.oar_confidence_threshold.clamp(0.0, 1.0);
 
+    // Track the last accepted numeric reading per region for deviation scoring.
+    let mut prev_values: HashMap<String, f64> = HashMap::new();
+
     let mut measurements: Vec<Measurement> = Vec::new();
     let mut elapsed: u64 = 0;
     let mut frame_num = first_frame;
@@ -242,10 +246,16 @@ pub async fn extract(
             }
         };
 
+        // Snapshot previous values before parallel processing so all regions in this
+        // frame read the *previous* frame's accepted values (not each other's).
+        let prev_snap = &prev_values;
+
         // Run OCR for all regions in parallel, producing (Measurement, RegionProgress) pairs.
         let outcomes: Vec<(Measurement, RegionProgress)> = regions
             .par_iter()
             .map(|region| {
+                let expectation = params.config.expectations.get(&region.name);
+                let prev_value  = prev_snap.get(&region.name).copied();
                 let (value, confidence, raw_text, ocr_preview, source) = read_region(
                     &frame_bytes,
                     fw,
@@ -258,6 +268,8 @@ pub async fn extract(
                     &fallback_engines,
                     params.filter_numeric,
                     oar_threshold,
+                    expectation,
+                    prev_value,
                 );
                 (
                     Measurement {
@@ -291,6 +303,13 @@ pub async fn extract(
                 regions: outcomes.iter().map(|(_, rp)| rp.clone()).collect(),
             },
         );
+
+        // Update prev_values with successfully parsed readings from this frame.
+        for (m, _) in &outcomes {
+            if let Ok(v) = m.value.parse::<f64>() {
+                prev_values.insert(m.region_name.clone(), v);
+            }
+        }
 
         measurements.extend(outcomes.into_iter().map(|(m, _)| m));
         elapsed += 1;

@@ -1,6 +1,28 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
+
+/// Per-region content expectations used during OCR result scoring.
+///
+/// All fields are optional — unset fields impose no constraint.
+/// Used by `ocr::validation_score` to penalise candidates that don't fit.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct RegionExpectation {
+    /// Whether the region is expected to contain a parseable number.
+    #[serde(default)]
+    pub numeric: bool,
+    /// Minimum acceptable value (inclusive).
+    pub min: Option<f64>,
+    /// Maximum acceptable value (inclusive).
+    pub max: Option<f64>,
+    /// Expected number of digits after the decimal point (0 = integer).
+    pub decimal_places: Option<u32>,
+    /// Expected total digit count (e.g. 4 for "37.5°" → 3 digits).
+    pub total_digits: Option<u32>,
+    /// Maximum allowed absolute change from the previous accepted value.
+    pub max_deviation: Option<f64>,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Region {
@@ -21,6 +43,9 @@ pub struct Keyframe {
 pub struct RegionConfig {
     pub video_path: String,
     pub keyframes: Vec<Keyframe>,
+    /// Per-region-name content expectations.  Absent from old configs → empty map.
+    #[serde(default)]
+    pub expectations: HashMap<String, RegionExpectation>,
 }
 
 impl RegionConfig {

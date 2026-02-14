@@ -120,11 +120,13 @@ function SeekBar({ ts, vinfo, keyframes, onChange }) {
 function Sidebar({
   vpath, setVpath, vinfo, onLoadVideo,
   names, onRenameRegion, onDeleteRegion,
+  expectations, onSetExpectation,
   keyframes, ts, onSeekTo, onDeleteKf,
   onSaveConfig, onLoadConfig,
 }) {
-  const [cfgPath, setCfgPath] = useState('regions.json');
-  const [cfgMsg, setCfgMsg]   = useState('');
+  const [cfgPath, setCfgPath]           = useState('regions.json');
+  const [cfgMsg, setCfgMsg]             = useState('');
+  const [expandedRegion, setExpanded]   = useState(null);
 
   async function pickAndLoadVideo() {
     const path = await openDialog({
@@ -186,16 +188,92 @@ function Sidebar({
         <CardTitle>Regions</CardTitle>
         {!names.length
           ? <span className="text-xs text-gray-400">Draw on the canvas to create regions.</span>
-          : names.map((n, i) => (
-            <div key={i} className="flex items-center gap-1">
-              <Input
-                type="text" value={n}
-                onChange={e => onRenameRegion(i, e.target.value)}
-                className="!py-1"
-              />
-              <Btn variant="ghost" onClick={() => onDeleteRegion(n)}>✕</Btn>
-            </div>
-          ))
+          : names.map((n, i) => {
+            const exp      = expectations[n] || {};
+            const expanded = expandedRegion === n;
+            const toggle   = () => setExpanded(expanded ? null : n);
+            const set      = (field, val) => onSetExpectation(n, field, val);
+            return (
+              <div key={i} className="border border-gray-100 rounded overflow-hidden">
+                {/* Header row */}
+                <div className="flex items-center gap-1 px-1 py-0.5">
+                  <button
+                    onClick={toggle}
+                    className="text-[10px] text-gray-400 hover:text-gray-600 w-4 shrink-0 text-center"
+                    title={expanded ? 'Collapse' : 'Configure expectations'}
+                  >
+                    {expanded ? '▼' : '▶'}
+                  </button>
+                  <Input
+                    type="text" value={n}
+                    onChange={e => onRenameRegion(i, e.target.value)}
+                    className="!py-0.5"
+                  />
+                  <Btn variant="ghost" onClick={() => onDeleteRegion(n)}>✕</Btn>
+                </div>
+
+                {/* Expectations panel */}
+                {expanded && (
+                  <div className="bg-gray-50/80 border-t border-gray-100 px-2 py-2 flex flex-col gap-2">
+                    <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer select-none">
+                      <input
+                        type="checkbox" checked={!!exp.numeric}
+                        onChange={e => set('numeric', e.target.checked)}
+                        className="accent-green-600"
+                      />
+                      Numeric region
+                    </label>
+
+                    {exp.numeric && (<>
+                      {/* Range */}
+                      <div>
+                        <span className="text-[10px] font-medium text-gray-400 uppercase tracking-wider">Value range</span>
+                        <div className="grid grid-cols-2 gap-1 mt-1">
+                          <div>
+                            <Label>Min</Label>
+                            <Input type="number" value={exp.min ?? ''} placeholder="–∞"
+                              onChange={e => set('min', e.target.value)} className="!py-0.5" />
+                          </div>
+                          <div>
+                            <Label>Max</Label>
+                            <Input type="number" value={exp.max ?? ''} placeholder="+∞"
+                              onChange={e => set('max', e.target.value)} className="!py-0.5" />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Digit structure */}
+                      <div>
+                        <span className="text-[10px] font-medium text-gray-400 uppercase tracking-wider">Digit structure</span>
+                        <div className="grid grid-cols-2 gap-1 mt-1">
+                          <div>
+                            <Label>Total digits</Label>
+                            <Input type="number" min={1} max={12}
+                              value={exp.total_digits ?? ''} placeholder="any"
+                              onChange={e => set('total_digits', e.target.value)} className="!py-0.5" />
+                          </div>
+                          <div>
+                            <Label>Decimal places</Label>
+                            <Input type="number" min={0} max={6}
+                              value={exp.decimal_places ?? ''} placeholder="any"
+                              onChange={e => set('decimal_places', e.target.value)} className="!py-0.5" />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Deviation */}
+                      <div>
+                        <Label>Max change per sample</Label>
+                        <Input type="number" min={0}
+                          value={exp.max_deviation ?? ''} placeholder="unlimited"
+                          onChange={e => set('max_deviation', e.target.value)} className="!py-0.5" />
+                      </div>
+                    </>)}
+                  </div>
+                )}
+              </div>
+            );
+          })
         }
       </Card>
 
@@ -268,7 +346,7 @@ function confBar(c) {
   return '#ef4444';
 }
 
-function ExtractTab({ vpath, vinfo, keyframes }) {
+function ExtractTab({ vpath, vinfo, keyframes, expectations }) {
   const [fpsSample,   setFpsSample]   = useState(30);
   const [lang,        setLang]        = useState('en,de');
   const [preprocess,     setPreprocess]     = useState(true);
@@ -333,7 +411,7 @@ function ExtractTab({ vpath, vinfo, keyframes }) {
       const res = await invoke('extract', {
         params: {
           video_path: vpath,
-          config: { video_path: vpath, keyframes },
+          config: { video_path: vpath, keyframes, expectations: buildBackendExpectations(expectations) },
           fps_sample: fpsSample,
           preprocess,
           filter_numeric: filterNumeric,
@@ -555,13 +633,59 @@ function ExtractTab({ vpath, vinfo, keyframes }) {
 
 // ── App root ───────────────────────────────────────────────────────────────
 
+// ── Helpers for expectations ────────────────────────────────────────────────
+
+/** Convert frontend expectation map (string fields) to the Rust-friendly shape. */
+function buildBackendExpectations(exps) {
+  const parseF = v => (v !== '' && v != null && !isNaN(+v)) ? +v : null;
+  const parseI = v => (v !== '' && v != null && !isNaN(parseInt(v, 10))) ? parseInt(v, 10) : null;
+  const out = {};
+  for (const [name, exp] of Object.entries(exps)) {
+    if (!exp?.numeric) continue;
+    out[name] = {
+      numeric:        true,
+      min:            parseF(exp.min),
+      max:            parseF(exp.max),
+      decimal_places: parseI(exp.decimal_places),
+      total_digits:   parseI(exp.total_digits),
+      max_deviation:  parseF(exp.max_deviation),
+    };
+  }
+  return out;
+}
+
+/** Convert backend expectations (null-valued fields) back to frontend string form. */
+function parseBackendExpectations(backendExps) {
+  if (!backendExps) return {};
+  return Object.fromEntries(
+    Object.entries(backendExps).map(([name, exp]) => [name, {
+      numeric:        exp.numeric ?? false,
+      min:            exp.min          != null ? String(exp.min)          : '',
+      max:            exp.max          != null ? String(exp.max)          : '',
+      decimal_places: exp.decimal_places != null ? String(exp.decimal_places) : '',
+      total_digits:   exp.total_digits   != null ? String(exp.total_digits)   : '',
+      max_deviation:  exp.max_deviation  != null ? String(exp.max_deviation)  : '',
+    }])
+  );
+}
+
+// ── App root ───────────────────────────────────────────────────────────────
+
 export default function App() {
-  const [vpath,     setVpath]     = useState('');
-  const [vinfo,     setVinfo]     = useState(null);
-  const [names,     setNames]     = useState([]);
-  const [keyframes, setKeyframes] = useState([]);
-  const [ts,        setTs]        = useState(0);
-  const [activeTab, setActiveTab] = useState('configure');
+  const [vpath,        setVpath]        = useState('');
+  const [vinfo,        setVinfo]        = useState(null);
+  const [names,        setNames]        = useState([]);
+  const [keyframes,    setKeyframes]    = useState([]);
+  const [expectations, setExpectations] = useState({});
+  const [ts,           setTs]           = useState(0);
+  const [activeTab,    setActiveTab]    = useState('configure');
+
+  function setExpectation(name, field, value) {
+    setExpectations(prev => ({
+      ...prev,
+      [name]: { ...(prev[name] || {}), [field]: value },
+    }));
+  }
 
   const canvasRef = useRef(null);
 
@@ -618,6 +742,7 @@ export default function App() {
     setKeyframes(kfs => kfs.map(kf => ({
       ...kf, regions: kf.regions.filter(r => r.name !== name),
     })));
+    setExpectations(prev => { const { [name]: _, ...rest } = prev; return rest; });
   }, []);
 
   function renameRegion(idx, newName) {
@@ -627,6 +752,11 @@ export default function App() {
       ...kf,
       regions: kf.regions.map(r => r.name === oldName ? { ...r, name: newName } : r),
     })));
+    setExpectations(prev => {
+      if (!(oldName in prev)) return prev;
+      const { [oldName]: exp, ...rest } = prev;
+      return { ...rest, [newName]: exp };
+    });
   }
 
   function deleteKf(timestamp) {
@@ -636,7 +766,11 @@ export default function App() {
   async function saveConfig(path) {
     await invoke('save_config', {
       path,
-      config: { video_path: vpath, keyframes },
+      config: {
+        video_path: vpath,
+        keyframes,
+        expectations: buildBackendExpectations(expectations),
+      },
     });
   }
 
@@ -650,6 +784,7 @@ export default function App() {
     }));
     setNames(ns);
     if (cfg.video_path) setVpath(cfg.video_path);
+    setExpectations(parseBackendExpectations(cfg.expectations));
   }
 
   return (
@@ -661,6 +796,8 @@ export default function App() {
           names={names}
           onRenameRegion={renameRegion}
           onDeleteRegion={handleRegionDeleted}
+          expectations={expectations}
+          onSetExpectation={setExpectation}
           keyframes={keyframes}
           ts={ts}
           onSeekTo={setTs}
@@ -716,7 +853,7 @@ export default function App() {
             className="flex-1 overflow-auto"
             style={{ display: activeTab === 'extract' ? 'flex' : 'none', flexDirection: 'column' }}
           >
-            <ExtractTab vpath={vpath} vinfo={vinfo} keyframes={keyframes} />
+            <ExtractTab vpath={vpath} vinfo={vinfo} keyframes={keyframes} expectations={expectations} />
           </div>
         </main>
       </div>

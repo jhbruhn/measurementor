@@ -4,7 +4,7 @@ mod processor;
 mod video;
 
 use config::{load_config, save_config};
-use processor::{cancel_extract, extract, CancelFlag};
+use processor::{cancel_extract, extract, save_csv, CancelFlag};
 use video::{get_frame, get_video_info};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -19,6 +19,7 @@ pub fn run() {
             save_config,
             extract,
             cancel_extract,
+            save_csv,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
