@@ -26,9 +26,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # System libraries required by Tauri (GTK/WebKit) and Tesseract.
-      # FFmpeg is compiled from source by ffmpeg-sys-the-third (static feature)
-      # so no FFmpeg dev packages are needed here.
+      # System libraries required by Tauri (GTK/WebKit).
+      # FFmpeg and Tesseract are compiled from source (static), so no -dev
+      # packages for either are needed here.
       # nasm is required by FFmpeg's build system for assembly optimisations.
       # libclang-dev is needed by ffmpeg-sys-the-third's bindgen step.
       # libjack0 + libasound2-dev + libpulse-dev + libpipewire-0.3-dev are
@@ -45,8 +45,6 @@ jobs:
             patchelf \
             libssl-dev \
             libclang-dev \
-            libtesseract-dev \
-            libleptonica-dev \
             file \
             nasm \
             libjack0 \
@@ -103,33 +101,8 @@ jobs:
     name: Build (Windows)
     runs-on: windows-latest
 
-    env:
-      # Enable vcpkg binary caching via GitHub Actions cache so compiled ports
-      # are restored on subsequent runs instead of being recompiled from source.
-      VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
-
     steps:
       - uses: actions/checkout@v4
-
-      # ── Tesseract via vcpkg ─────────────────────────────────────────────────
-      # FFmpeg is compiled from source by ffmpeg-sys-the-third (static feature)
-      # so only Tesseract needs installing here.
-      #
-      # lukka/run-vcpkg handles caching automatically; the pinned commit is the
-      # vcpkg 2026.01.16 release (Tesseract 5.4 in the registry).
-      # To update: bump vcpkgGitCommitId to a newer vcpkg release commit.
-      - name: Setup vcpkg
-        uses: lukka/run-vcpkg@v11
-        with:
-          vcpkgGitCommitId: "66c0373dc7fca549e5803087b9487edfe3aca0a1" # vcpkg 2026.01.16
-          vcpkgDirectory: ${{ runner.temp }}\vcpkg
-
-      - name: Install Tesseract via vcpkg
-        shell: pwsh
-        run: |
-          & "$env:RUNNER_TEMP\vcpkg\vcpkg.exe" install tesseract:x64-windows
-        env:
-          VCPKG_ROOT: ${{ runner.temp }}\vcpkg
 
       # ── Rust / Node ─────────────────────────────────────────────────────────
       - uses: actions/setup-node@v4
@@ -153,12 +126,8 @@ jobs:
         shell: pwsh
         run: npm run tauri build
         env:
-          VCPKG_ROOT: ${{ runner.temp }}\vcpkg
-          # VCPKGRS_DYNAMIC=1 tells the `vcpkg` Rust crate to link the
-          # tesseract DLL rather than attempting a static link.
-          VCPKGRS_DYNAMIC: "1"
-          # bindgen (used by ffmpeg-sys-the-third and tesseract-plumbing) needs
-          # libclang.  LLVM is pre-installed on windows-latest at this path.
+          # bindgen (used by ffmpeg-sys-the-third) needs libclang.
+          # LLVM is pre-installed on windows-latest at this path.
           LIBCLANG_PATH: C:\Program Files\LLVM\bin
 
       - name: Upload NSIS installer

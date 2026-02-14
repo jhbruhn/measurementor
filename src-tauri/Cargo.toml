@@ -29,4 +29,4 @@ oar-ocr = "0.6"
 anyhow = "1"
 ffmpeg-the-third = { git = "https://github.com/shssoichiro/ffmpeg-the-third", default-features = false, features = ["build", "codec", "format", "software-scaling"] }
 rayon = "1"
-tesseract = "0.15"
+kreuzberg-tesseract = "4"

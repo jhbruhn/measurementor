@@ -37,23 +37,7 @@
 
     "resources": {
       "models/*": "models/",
-      "tessdata/*": "tessdata/",
-      "libs/windows/*": "."
-    },
-
-    "linux": {
-      "deb": {
-        "depends": [
-          "libtesseract5",
-          "libleptonica6"
-        ]
-      }
-    },
-
-    "windows": {
-      "nsis": {
-        "installerHooks": "nsis-extra.nsi"
-      }
+      "tessdata/*": "tessdata/"
     }
   },
   "plugins": {}

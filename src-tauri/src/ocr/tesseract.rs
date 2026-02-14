@@ -8,18 +8,13 @@ use imageproc::{
     morphology::open as morph_open,
 };
 use rayon::prelude::*;
-use tesseract::{PageSegMode, Tesseract};
+use kreuzberg_tesseract::TesseractAPI;
 
 use super::{OcrResult, Recognizer};
 
 // ── Constants ─────────────────────────────────────────────────────────────
 
-const PSMS: &[PageSegMode] = &[
-    PageSegMode::PsmSingleLine,
-    PageSegMode::PsmSingleBlock,
-    PageSegMode::PsmSingleWord,
-    PageSegMode::PsmRawLine,
-];
+const PSMS: &[u32] = &[7, 6, 8, 13];
 
 /// Upscale factor applied before processing to improve recognition on small crops.
 const UPSCALE_FACTOR: u32 = 6;
@@ -420,23 +415,21 @@ fn try_ocr(
     h: u32,
     lang: &str,
     datadir: Option<&str>,
-    psm: PageSegMode,
+    psm: u32,
     bpp: i32,
 ) -> Result<(String, f64), ()> {
-    let mut tess = Tesseract::new(datadir, Some(lang))
-        .map_err(|_| ())?
-        .set_frame(bytes, w as i32, h as i32, bpp, w as i32 * bpp)
-        .map_err(|_| ())?;
-    tess.set_page_seg_mode(psm);
-    let mut tess = tess.recognize().map_err(|_| ())?;
+    let mut api = TesseractAPI::new();
+    api.init(datadir.unwrap_or(""), lang).map_err(|_| ())?;
+    api.set_variable("tessedit_pageseg_mode", &psm.to_string()).map_err(|_| ())?;
+    api.set_image(bytes, w as i32, h as i32, bpp, w as i32 * bpp).map_err(|_| ())?;
 
-    let raw     = tess.get_text().map_err(|_| ())?;
+    let raw     = api.get_utf8_text().map_err(|_| ())?;
     let trimmed = raw.trim().to_string();
     if trimmed.is_empty() {
         return Err(());
     }
 
-    let conf = tess.mean_text_conf().max(0) as f64 / 100.0;
+    let conf = api.mean_text_conf().map_err(|_| ())?.max(0) as f64 / 100.0;
     Ok((trimmed, conf))
 }
 
