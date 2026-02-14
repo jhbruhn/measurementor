@@ -94,6 +94,20 @@ fn collect_libs() {
     collect_libs_windows(&win_dir);
 }
 
+/// DLL name prefixes we want to bundle (matched against filenames in the search dirs).
+#[cfg(target_os = "windows")]
+const WINDOWS_DLL_PREFIXES: &[&str] = &[
+    "avutil",
+    "avformat",
+    "avcodec",
+    "avfilter",
+    "avdevice",
+    "swscale",
+    "swresample",
+    "tesseract",
+    "leptonica",
+];
+
 #[cfg(target_os = "windows")]
 fn collect_libs_windows(dest: &std::path::Path) {
     // Candidate directories to search for DLLs, in priority order:

@@ -21,7 +21,7 @@ jobs:
   # ────────────────────────────────────────────────────────────────────────────
   build-linux:
     name: Build (Linux)
-    runs-on: ubuntu-22.04  # older glibc = broader compatibility for AppImage
+    runs-on: ubuntu-20.04  # glibc 2.31 → AppImage runs on older distros; 18.04 is EOL
 
     steps:
       - uses: actions/checkout@v4
@@ -127,30 +127,20 @@ jobs:
           echo "FFMPEG_DIR=$dir" >> $env:GITHUB_ENV
 
       # ── Tesseract via vcpkg ─────────────────────────────────────────────────
-      # The `tesseract` Rust crate uses the `vcpkg` crate on Windows to locate
-      # the library.  VCPKG_ROOT must point at an installation that contains
-      # tesseract:x64-windows (and its leptonica dependency).
-      # We restore from cache first; only rebuild on a cache miss.
-      - name: Restore vcpkg cache
-        id: cache-vcpkg
-        uses: actions/cache@v4
-        with:
-          path: ${{ runner.temp }}\vcpkg\installed
-          # Bump the cache version suffix (v1 → v2 etc.) to force a full rebuild.
-          key: vcpkg-x64-windows-tesseract-v1
-
+      # The `tesseract` Rust crate uses the `vcpkg` Rust crate on Windows to
+      # locate the library.  VCPKG_ROOT must point at an installation that
+      # contains tesseract:x64-windows (Tesseract >= 5.2 for TessBaseAPIInit5).
+      #
+      # lukka/run-vcpkg handles caching automatically; the pinned commit is the
+      # vcpkg 2026.01.16 release (Tesseract 5.4 in the registry).
+      # To update: bump vcpkgGitCommitId to a newer vcpkg release commit.
       - name: Setup vcpkg
-        # Clone the official vcpkg repo into a known path so we control the
-        # version independently of the runner's pre-installed copy.
-        shell: pwsh
-        run: |
-          if (-not (Test-Path "$env:RUNNER_TEMP\vcpkg")) {
-            git clone https://github.com/microsoft/vcpkg "$env:RUNNER_TEMP\vcpkg" --depth 1
-          }
-          & "$env:RUNNER_TEMP\vcpkg\bootstrap-vcpkg.bat" -disableMetrics
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgGitCommitId: "66c0373dc7fca549e5803087b9487edfe3aca0a1"  # vcpkg 2026.01.16
+          vcpkgDirectory: ${{ runner.temp }}\vcpkg
 
       - name: Install Tesseract via vcpkg
-        if: steps.cache-vcpkg.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
           & "$env:RUNNER_TEMP\vcpkg\vcpkg.exe" install tesseract:x64-windows
