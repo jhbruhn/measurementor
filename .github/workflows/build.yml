@@ -24,9 +24,9 @@ jobs:
     runs-on: ubuntu-24.04
 
     env:
-      # Must match the Windows build and the deb.depends version (libavcodec61 = FFmpeg 7).
-      # Ubuntu 22.04 ships only FFmpeg 4.4 in apt; ffmpeg-next = "7" requires FFmpeg 7.x,
-      # so we download a pre-built package just like the Windows job does.
+      # ffmpeg-next = "7" requires the FFmpeg 7 C library.
+      # Ubuntu 24.04 ships only FFmpeg 6.1 in apt, so we download a pre-built
+      # package from BtbN just like the Windows job does.
       FFMPEG_VERSION: "7.1"
 
     steps:
@@ -51,8 +51,6 @@ jobs:
             file
 
       # ── FFmpeg pre-built dev package ──────────────────────────────────────────
-      # BtbN's LGPL shared build includes headers, .so files, and pkg-config files.
-      # ffmpeg-sys-next reads FFMPEG_DIR directly, bypassing apt's older version.
       - name: Restore FFmpeg cache
         id: cache-ffmpeg
         uses: actions/cache@v4
@@ -73,9 +71,7 @@ jobs:
       - name: Set FFMPEG_DIR
         run: |
           echo "FFMPEG_DIR=$RUNNER_TEMP/ffmpeg" >> $GITHUB_ENV
-          # LIBRARY_PATH makes cc's linker driver search this directory for -lav* etc.
           echo "LIBRARY_PATH=$RUNNER_TEMP/ffmpeg/lib" >> $GITHUB_ENV
-          # PKG_CONFIG_PATH lets ffmpeg-sys-next fall back to pkg-config if needed.
           echo "PKG_CONFIG_PATH=$RUNNER_TEMP/ffmpeg/lib/pkgconfig" >> $GITHUB_ENV
 
       - uses: actions/setup-node@v4
@@ -124,7 +120,7 @@ jobs:
     runs-on: windows-latest
 
     env:
-      # FFmpeg 7.x matches the Linux dev libs (libavcodec.so.61 etc.)
+      # FFmpeg 7.x matches the deb.depends version (libavcodec61) and ffmpeg-next = "7".
       FFMPEG_VERSION: "7.1"
       # Enable vcpkg binary caching via GitHub Actions cache so compiled ports
       # (tesseract and its deps) are restored on subsequent runs instead of
