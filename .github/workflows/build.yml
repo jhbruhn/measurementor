@@ -21,7 +21,7 @@ jobs:
   # ────────────────────────────────────────────────────────────────────────────
   build-linux:
     name: Build (Linux)
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
 
     steps:
       - uses: actions/checkout@v4
@@ -75,7 +75,7 @@ jobs:
           name: Measurementor-linux-AppImage
           path: src-tauri/target/release/bundle/appimage/*.AppImage
           if-no-files-found: error
-          compression-level: 0  # AppImages are already compressed
+          compression-level: 0 # AppImages are already compressed
 
       - name: Upload deb
         uses: actions/upload-artifact@v4
@@ -137,7 +137,7 @@ jobs:
       - name: Setup vcpkg
         uses: lukka/run-vcpkg@v11
         with:
-          vcpkgGitCommitId: "66c0373dc7fca549e5803087b9487edfe3aca0a1"  # vcpkg 2026.01.16
+          vcpkgGitCommitId: "66c0373dc7fca549e5803087b9487edfe3aca0a1" # vcpkg 2026.01.16
           vcpkgDirectory: ${{ runner.temp }}\vcpkg
 
       - name: Install Tesseract via vcpkg
@@ -193,7 +193,7 @@ jobs:
     needs: [build-linux, build-windows]
     runs-on: ubuntu-latest
     permissions:
-      contents: write  # required to create a release
+      contents: write # required to create a release
 
     steps:
       - name: Download all build artifacts
