@@ -1,0 +1,226 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+
+# Cancel in-flight runs for the same branch/PR so pushes don't queue up.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # ────────────────────────────────────────────────────────────────────────────
+  # Linux  →  AppImage  +  .deb
+  # ────────────────────────────────────────────────────────────────────────────
+  build-linux:
+    name: Build (Linux)
+    runs-on: ubuntu-22.04  # older glibc = broader compatibility for AppImage
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # System libraries required by Tauri (GTK/WebKit) and by our native deps
+      # (FFmpeg, Tesseract).  libclang-dev is needed by ffmpeg-sys-next's bindgen.
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libgtk-3-dev \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libssl-dev \
+            libclang-dev \
+            libavcodec-dev \
+            libavformat-dev \
+            libavutil-dev \
+            libavfilter-dev \
+            libavdevice-dev \
+            libswscale-dev \
+            libswresample-dev \
+            libtesseract-dev \
+            libleptonica-dev \
+            file
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          cache-on-failure: true
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Build Tauri app
+        run: npm run tauri build
+
+      - name: Upload AppImage
+        uses: actions/upload-artifact@v4
+        with:
+          name: Measurementor-linux-AppImage
+          path: src-tauri/target/release/bundle/appimage/*.AppImage
+          if-no-files-found: error
+          compression-level: 0  # AppImages are already compressed
+
+      - name: Upload deb
+        uses: actions/upload-artifact@v4
+        with:
+          name: Measurementor-linux-deb
+          path: src-tauri/target/release/bundle/deb/*.deb
+          if-no-files-found: error
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # Windows  →  NSIS installer (.exe)
+  # ────────────────────────────────────────────────────────────────────────────
+  build-windows:
+    name: Build (Windows)
+    runs-on: windows-latest
+
+    env:
+      # FFmpeg 7.x matches the Linux dev libs (libavcodec.so.61 etc.)
+      FFMPEG_VERSION: "7.1"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── FFmpeg pre-built dev package ────────────────────────────────────────
+      # We use BtbN's shared build (headers + import libs + DLLs) so that
+      # ffmpeg-sys-next can compile against it without a full vcpkg FFmpeg build.
+      - name: Restore FFmpeg cache
+        id: cache-ffmpeg
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}\ffmpeg
+          key: ffmpeg-win64-lgpl-shared-${{ env.FFMPEG_VERSION }}
+
+      - name: Download FFmpeg dev package
+        if: steps.cache-ffmpeg.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $fname = "ffmpeg-n${{ env.FFMPEG_VERSION }}-latest-win64-lgpl-shared-${{ env.FFMPEG_VERSION }}.zip"
+          $url   = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/$fname"
+          $zip   = "$env:RUNNER_TEMP\ffmpeg.zip"
+          Write-Host "Downloading $url"
+          Invoke-WebRequest -Uri $url -OutFile $zip -MaximumRetryCount 3 -RetryIntervalSec 5
+          Expand-Archive -Path $zip -DestinationPath "$env:RUNNER_TEMP\ffmpeg"
+
+      - name: Set FFMPEG_DIR
+        shell: pwsh
+        run: |
+          $dir = (Get-ChildItem -Directory "$env:RUNNER_TEMP\ffmpeg" | Select-Object -First 1).FullName
+          Write-Host "FFMPEG_DIR=$dir"
+          echo "FFMPEG_DIR=$dir" >> $env:GITHUB_ENV
+
+      # ── Tesseract via vcpkg ─────────────────────────────────────────────────
+      # The `tesseract` Rust crate uses the `vcpkg` crate on Windows to locate
+      # the library.  VCPKG_ROOT must point at an installation that contains
+      # tesseract:x64-windows (and its leptonica dependency).
+      # We restore from cache first; only rebuild on a cache miss.
+      - name: Restore vcpkg cache
+        id: cache-vcpkg
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}\vcpkg\installed
+          # Bump the cache version suffix (v1 → v2 etc.) to force a full rebuild.
+          key: vcpkg-x64-windows-tesseract-v1
+
+      - name: Setup vcpkg
+        # Clone the official vcpkg repo into a known path so we control the
+        # version independently of the runner's pre-installed copy.
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "$env:RUNNER_TEMP\vcpkg")) {
+            git clone https://github.com/microsoft/vcpkg "$env:RUNNER_TEMP\vcpkg" --depth 1
+          }
+          & "$env:RUNNER_TEMP\vcpkg\bootstrap-vcpkg.bat" -disableMetrics
+
+      - name: Install Tesseract via vcpkg
+        if: steps.cache-vcpkg.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          & "$env:RUNNER_TEMP\vcpkg\vcpkg.exe" install tesseract:x64-windows
+        env:
+          VCPKG_ROOT: ${{ runner.temp }}\vcpkg
+
+      # ── Rust / Node ─────────────────────────────────────────────────────────
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          cache-on-failure: true
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      # ── Build ───────────────────────────────────────────────────────────────
+      - name: Build Tauri app
+        shell: pwsh
+        run: npm run tauri build
+        env:
+          VCPKG_ROOT: ${{ runner.temp }}\vcpkg
+          # VCPKGRS_DYNAMIC=1 tells the `vcpkg` Rust crate to link the
+          # tesseract DLL rather than attempting a static link.
+          VCPKGRS_DYNAMIC: "1"
+          # bindgen (used by ffmpeg-sys-next and tesseract-plumbing) needs
+          # libclang.  LLVM is pre-installed on windows-latest at this path.
+          LIBCLANG_PATH: C:\Program Files\LLVM\bin
+
+      - name: Upload NSIS installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Measurementor-windows-installer
+          path: src-tauri/target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # GitHub Release  (only on version tags, e.g. v0.1.0)
+  # ────────────────────────────────────────────────────────────────────────────
+  release:
+    name: Create GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build-linux, build-windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # required to create a release
+
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+          path: artifacts
+
+      - name: List artifacts
+        run: ls -lR artifacts/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/*.AppImage
+            artifacts/*.deb
+            artifacts/*-setup.exe
+          generate_release_notes: true
+          fail_on_unmatched_files: true
