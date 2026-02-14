@@ -116,6 +116,9 @@ jobs:
         with:
           msystem: MINGW64
           update: false
+          # inherit: expose the full Windows PATH inside MSYS2 so that tools
+          # installed by earlier steps (npm, cargo, etc.) are visible.
+          path-type: inherit
           install: >-
             nasm
             make
