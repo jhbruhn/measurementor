@@ -1,5 +1,7 @@
 target/
 models/*.onnx
 models/*.txt
+# Tesseract language data downloaded by build.rs — generated, not source-controlled
+tessdata/*.traineddata
 # Windows DLLs collected by build.rs — generated, not source-controlled
 libs/windows/

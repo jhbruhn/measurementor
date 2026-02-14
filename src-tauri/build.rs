@@ -3,6 +3,10 @@ fn main() {
     // Runs before tauri_build so the resource glob in tauri.conf.json resolves correctly.
     download_models();
 
+    // Download Tesseract language data into src-tauri/tessdata/ so the bundled app
+    // can find tessdata at runtime without relying on a system installation.
+    download_tessdata();
+
     // Collect the native shared libraries (FFmpeg, Tesseract, Leptonica) that the
     // binary links against into src-tauri/libs/{platform}/ so tauri.conf.json can
     // bundle them as resources in the installer / AppImage.
@@ -53,6 +57,51 @@ fn download_models() {
             .unwrap_or_else(|e| panic!("failed to write {filename}: {e}"));
 
         println!("cargo:warning=oar-ocr: {filename} ready");
+    }
+}
+
+// ── Tesseract language data download ──────────────────────────────────────────
+//
+// tessdata_fast files are small (~3–6 MB each) pre-trained models.  They are
+// downloaded into src-tauri/tessdata/ at build time and bundled as Tauri
+// resources so the app can call Tesseract::new(Some(tessdata_parent), …) at
+// runtime without requiring a system Tesseract installation.
+
+const TESSDATA_BASE: &str =
+    "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/main";
+
+/// Languages supported by `build_lang()` in ocr/tesseract.rs.
+const TESSDATA_LANGS: &[&str] = &["eng", "deu", "fra", "spa"];
+
+fn download_tessdata() {
+    let manifest = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
+    let dir = std::path::Path::new(&manifest).join("tessdata");
+    std::fs::create_dir_all(&dir).expect("could not create tessdata/");
+
+    for lang in TESSDATA_LANGS {
+        let filename = format!("{lang}.traineddata");
+        let dest = dir.join(&filename);
+
+        println!("cargo:rerun-if-changed=tessdata/{filename}");
+
+        if dest.exists() {
+            continue;
+        }
+
+        let url = format!("{TESSDATA_BASE}/{filename}");
+        println!("cargo:warning=tessdata: downloading {filename}…");
+
+        let resp = ureq::get(&url)
+            .call()
+            .unwrap_or_else(|e| panic!("failed to download {filename}: {e}"));
+
+        let mut file =
+            std::fs::File::create(&dest).expect("could not create tessdata file");
+
+        std::io::copy(&mut resp.into_reader(), &mut file)
+            .unwrap_or_else(|e| panic!("failed to write {filename}: {e}"));
+
+        println!("cargo:warning=tessdata: {filename} ready");
     }
 }
 

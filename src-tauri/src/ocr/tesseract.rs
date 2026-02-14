@@ -70,6 +70,10 @@ pub enum Preprocess {
 pub struct TesseractRecognizer {
     pub languages: Vec<String>,
     pub preprocess: Preprocess,
+    /// Parent directory of `tessdata/` (i.e. the dir that contains a `tessdata/`
+    /// subdirectory with `*.traineddata` files).  `None` → Tesseract uses
+    /// TESSDATA_PREFIX or the system default.
+    pub tessdata_dir: Option<String>,
 }
 
 impl Recognizer for TesseractRecognizer {
@@ -87,14 +91,15 @@ impl Recognizer for TesseractRecognizer {
 
     fn recognize(&self, crop: &DynamicImage) -> Option<OcrResult> {
         let lang = build_lang(&self.languages);
+        let datadir = self.tessdata_dir.as_deref();
         match self.preprocess {
             Preprocess::RawRgb => {
                 let img = crop.to_rgb8();
-                run_ocr_bytes(img.as_raw(), img.width(), img.height(), 3, &lang, self.name())
+                run_ocr_bytes(img.as_raw(), img.width(), img.height(), 3, &lang, datadir, self.name())
             }
             _ => {
                 let img = self.prepare_gray(crop);
-                run_ocr_bytes(img.as_raw(), img.width(), img.height(), 1, &lang, self.name())
+                run_ocr_bytes(img.as_raw(), img.width(), img.height(), 1, &lang, datadir, self.name())
             }
         }
     }
@@ -382,17 +387,19 @@ fn sauvola_threshold(gray: &GrayImage) -> GrayImage {
 
 /// Run all PSMs in parallel on raw bytes, return the best-confidence OcrResult.
 /// `bpp` = bytes-per-pixel (1 for grayscale, 3 for RGB).
+/// `datadir` is the parent directory of `tessdata/`; `None` → system default.
 fn run_ocr_bytes(
     bytes: &[u8],
     w: u32,
     h: u32,
     bpp: i32,
     lang: &str,
+    datadir: Option<&str>,
     engine_name: &str,
 ) -> Option<OcrResult> {
     let (text, confidence) = PSMS
         .par_iter()
-        .filter_map(|&psm| try_ocr(bytes, w, h, lang, psm, bpp).ok())
+        .filter_map(|&psm| try_ocr(bytes, w, h, lang, datadir, psm, bpp).ok())
         .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))?;
 
     let color = if bpp == 1 {
@@ -406,15 +413,17 @@ fn run_ocr_bytes(
 }
 
 /// Call Tesseract for one PSM. `bpp` = 1 for grayscale, 3 for RGB.
+/// `datadir` is the parent directory of the `tessdata/` folder; `None` → system default.
 fn try_ocr(
     bytes: &[u8],
     w: u32,
     h: u32,
     lang: &str,
+    datadir: Option<&str>,
     psm: PageSegMode,
     bpp: i32,
 ) -> Result<(String, f64), ()> {
-    let mut tess = Tesseract::new(None, Some(lang))
+    let mut tess = Tesseract::new(datadir, Some(lang))
         .map_err(|_| ())?
         .set_frame(bytes, w as i32, h as i32, bpp, w as i32 * bpp)
         .map_err(|_| ())?;

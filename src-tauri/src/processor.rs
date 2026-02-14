@@ -161,6 +161,29 @@ pub async fn extract(
         }
     };
 
+    // Locate bundled Tesseract tessdata.
+    // Tesseract::new(datadir, lang) looks for <datadir>/tessdata/<lang>.traineddata.
+    // Dev:  src-tauri/ (CARGO_MANIFEST_DIR) contains tessdata/ downloaded by build.rs.
+    // Prod: Tauri resource_dir() contains tessdata/ bundled via tauri.conf.json.
+    let tessdata_dir: Option<String> = {
+        use tauri::Manager as _;
+        let candidates = [
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")),
+            app.path()
+                .resource_dir()
+                .unwrap_or_default(),
+        ];
+        candidates
+            .iter()
+            .find(|d| d.join("tessdata").join("eng.traineddata").exists())
+            .map(|d| d.to_string_lossy().to_string())
+    };
+    if let Some(ref td) = tessdata_dir {
+        eprintln!("tesseract tessdata found at {td:?}");
+    } else {
+        eprintln!("tesseract tessdata not found — falling back to system default");
+    }
+
     // Fallback: Tesseract variants (run when oar-ocr confidence is below threshold).
     //
     // When preprocessing is enabled:
@@ -176,33 +199,40 @@ pub async fn extract(
             v.push(Box::new(TesseractRecognizer {
                 languages: params.languages.clone(),
                 preprocess: Preprocess::Binary,
+                tessdata_dir: tessdata_dir.clone(),
             }));
             v.push(Box::new(TesseractRecognizer {
                 languages: params.languages.clone(),
                 preprocess: Preprocess::Gray,
+                tessdata_dir: tessdata_dir.clone(),
             }));
             v.push(Box::new(TesseractRecognizer {
                 languages: params.languages.clone(),
                 preprocess: Preprocess::ChannelR,
+                tessdata_dir: tessdata_dir.clone(),
             }));
             v.push(Box::new(TesseractRecognizer {
                 languages: params.languages.clone(),
                 preprocess: Preprocess::ChannelG,
+                tessdata_dir: tessdata_dir.clone(),
             }));
             v.push(Box::new(TesseractRecognizer {
                 languages: params.languages.clone(),
                 preprocess: Preprocess::ChannelB,
+                tessdata_dir: tessdata_dir.clone(),
             }));
         } else {
             v.push(Box::new(TesseractRecognizer {
                 languages: params.languages.clone(),
                 preprocess: Preprocess::RawGray,
+                tessdata_dir: tessdata_dir.clone(),
             }));
         }
         // Raw RGB is always included as an additional Tesseract variant
         v.push(Box::new(TesseractRecognizer {
             languages: params.languages.clone(),
             preprocess: Preprocess::RawRgb,
+            tessdata_dir,
         }));
         v
     };
