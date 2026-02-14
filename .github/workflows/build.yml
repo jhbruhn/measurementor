@@ -32,6 +32,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Tesseract 5 is not in Ubuntu 22.04's default repos; this PPA provides it.
+      - name: Add Tesseract 5 PPA
+        run: sudo add-apt-repository -y ppa:alex-p/tesseract-ocr5
+
       # System libraries required by Tauri (GTK/WebKit) and Tesseract.
       # FFmpeg is NOT installed from apt — we provide FFmpeg 7 via BtbN below.
       # libclang-dev is needed by ffmpeg-sys-next's bindgen.
@@ -46,8 +50,7 @@ jobs:
             patchelf \
             libssl-dev \
             libclang-dev \
-            libtesseract-dev \
-            libleptonica-dev \
+            tesseract-lept5 \
             file
 
       # ── FFmpeg pre-built dev package ──────────────────────────────────────────
