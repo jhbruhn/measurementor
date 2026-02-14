@@ -56,21 +56,19 @@ fn download_models() {
     }
 }
 
-// ── Native library collection ─────────────────────────────────────────────────
+// ── Windows DLL collection ────────────────────────────────────────────────────
 //
-// Copies the shared libraries that the binary dynamically links against
-// (FFmpeg libav*/libsw*, Tesseract, Leptonica) into
-//   src-tauri/libs/linux/   — .so files for Linux builds
-//   src-tauri/libs/windows/ — .dll files for Windows builds
+// On Windows, DLLs must sit next to the .exe for Windows' loader to find them.
+// Tauri resources land in a resources\ subdirectory, so a custom NSIS macro
+// (nsis-extra.nsi) copies them to $INSTDIR at install time.
 //
-// tauri.conf.json then bundles these as resources so:
-//   • AppImage / deb:  libraries land in the app resource dir; the binary's
-//                      RPATH ($ORIGIN/../resources) finds them at runtime.
-//   • Windows NSIS:    a custom macro (nsis-extra.nsi) copies them from
-//                      resources\ to the install root where Windows DLL search
-//                      finds them (must be next to the .exe).
+// This function collects the DLLs from known locations into
+// src-tauri/libs/windows/ which tauri.conf.json then bundles as resources.
 //
-// Trigger a rebuild when the environment hints change.
+// On Linux nothing needs collecting: Tauri's AppImage builder runs linuxdeploy
+// which automatically detects and bundles all non-system .so dependencies by
+// analysing the binary's ldd output.  The RPATH embedded via .cargo/config.toml
+// covers running the unwrapped binary directly (dev / non-AppImage use).
 fn collect_libs() {
     println!("cargo:rerun-if-env-changed=FFMPEG_DIR");
     println!("cargo:rerun-if-env-changed=VCPKG_ROOT");
@@ -83,92 +81,17 @@ fn collect_libs() {
     let manifest = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
     let libs_root = std::path::Path::new(&manifest).join("libs");
 
-    // Ensure both platform dirs exist with at least a .gitkeep so the
-    // tauri.conf.json resource globs ("libs/linux/*", "libs/windows/*") never
-    // fail on an absent or empty directory during a cross-platform build.
-    for sub in &["linux", "windows"] {
-        let dir = libs_root.join(sub);
-        std::fs::create_dir_all(&dir).ok();
-        let keep = dir.join(".gitkeep");
-        if !keep.exists() {
-            std::fs::write(&keep, b"").ok();
-        }
+    // Always create libs/windows/ with a .gitkeep so the tauri.conf.json
+    // resource glob ("libs/windows/*") never errors on an absent directory.
+    let win_dir = libs_root.join("windows");
+    std::fs::create_dir_all(&win_dir).ok();
+    let keep = win_dir.join(".gitkeep");
+    if !keep.exists() {
+        std::fs::write(&keep, b"").ok();
     }
-
-    // Collect the actual libraries for the current platform.
-    #[cfg(target_os = "linux")]
-    collect_libs_linux(&libs_root.join("linux"));
 
     #[cfg(target_os = "windows")]
-    collect_libs_windows(&libs_root.join("windows"));
-}
-
-/// Library name prefixes we want to bundle (matched against ldconfig output).
-const LINUX_LIB_PREFIXES: &[&str] = &[
-    "libavutil",
-    "libavformat",
-    "libavcodec",
-    "libavfilter",
-    "libavdevice",
-    "libswscale",
-    "libswresample",
-    "libtesseract",
-    "libleptonica",
-];
-
-/// DLL name prefixes we want to bundle on Windows.
-#[cfg(target_os = "windows")]
-const WINDOWS_DLL_PREFIXES: &[&str] = &[
-    "avutil",
-    "avformat",
-    "avcodec",
-    "avfilter",
-    "avdevice",
-    "swscale",
-    "swresample",
-    "tesseract",
-    "leptonica",
-];
-
-#[cfg(target_os = "linux")]
-fn collect_libs_linux(dest: &std::path::Path) {
-    // `ldconfig -p` lists every cached shared library with its resolved path, e.g.:
-    //   libavutil.so.59 (libc6,x86-64) => /lib/x86_64-linux-gnu/libavutil.so.59
-    let output = match std::process::Command::new("ldconfig").arg("-p").output() {
-        Ok(o) => o,
-        Err(e) => {
-            println!("cargo:warning=collect_libs: ldconfig not available ({e}) — skipping");
-            return;
-        }
-    };
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    for line in stdout.lines() {
-        let trimmed = line.trim();
-        // Only handle lines that start with one of our target prefixes.
-        if !LINUX_LIB_PREFIXES.iter().any(|p| trimmed.starts_with(p)) {
-            continue;
-        }
-        // Extract the resolved path after "=>".
-        let Some(arrow) = trimmed.find("=>") else { continue };
-        let src_str = trimmed[arrow + 2..].trim();
-        let src = std::path::Path::new(src_str);
-        if !src.exists() {
-            continue;
-        }
-        let filename = match src.file_name() {
-            Some(n) => n,
-            None => continue,
-        };
-        let dst = dest.join(filename);
-        if dst.exists() {
-            continue; // already collected this run or a previous run
-        }
-        match std::fs::copy(src, &dst) {
-            Ok(_) => println!("cargo:warning=collect_libs: bundled {src_str}"),
-            Err(e) => println!("cargo:warning=collect_libs: could not copy {src_str}: {e}"),
-        }
-    }
+    collect_libs_windows(&win_dir);
 }
 
 #[cfg(target_os = "windows")]

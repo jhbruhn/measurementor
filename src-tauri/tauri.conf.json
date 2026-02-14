@@ -31,17 +31,10 @@
 
     "resources": {
       "models/*": "models/",
-      "libs/linux/*": ".",
       "libs/windows/*": "."
     },
 
     "linux": {
-      "appimage": {
-        "bundleMediaFramework": false,
-        "files": {
-          "/usr/lib/": "libs/linux/"
-        }
-      },
       "deb": {
         "depends": [
           "libavcodec61 | libavcodec-extra",
