@@ -71,7 +71,12 @@ jobs:
           tar -xf "$RUNNER_TEMP/ffmpeg.tar.xz" -C "$RUNNER_TEMP/ffmpeg" --strip-components=1
 
       - name: Set FFMPEG_DIR
-        run: echo "FFMPEG_DIR=$RUNNER_TEMP/ffmpeg" >> $GITHUB_ENV
+        run: |
+          echo "FFMPEG_DIR=$RUNNER_TEMP/ffmpeg" >> $GITHUB_ENV
+          # LIBRARY_PATH makes cc's linker driver search this directory for -lav* etc.
+          echo "LIBRARY_PATH=$RUNNER_TEMP/ffmpeg/lib" >> $GITHUB_ENV
+          # PKG_CONFIG_PATH lets ffmpeg-sys-next fall back to pkg-config if needed.
+          echo "PKG_CONFIG_PATH=$RUNNER_TEMP/ffmpeg/lib/pkgconfig" >> $GITHUB_ENV
 
       - uses: actions/setup-node@v4
         with:
