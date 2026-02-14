@@ -96,6 +96,10 @@ jobs:
           # linuxdeploy and its plugins are AppImages; GitHub Actions runners don't
           # have FUSE, so tell AppImages to extract-and-run instead of mounting.
           APPIMAGE_EXTRACT_AND_RUN: "1"
+          # Ubuntu 24.04 system libs use .relr.dyn ELF sections that the old
+          # eu-strip inside linuxdeploy can't handle.  NO_STRIP disables the
+          # strip step so linuxdeploy doesn't error out on them.
+          NO_STRIP: "true"
 
       - name: Upload AppImage
         uses: actions/upload-artifact@v4
