@@ -162,9 +162,10 @@ pub async fn extract(
     };
 
     // Locate bundled Tesseract tessdata.
-    // Tesseract::new(datadir, lang) looks for <datadir>/tessdata/<lang>.traineddata.
-    // Dev:  src-tauri/ (CARGO_MANIFEST_DIR) contains tessdata/ downloaded by build.rs.
-    // Prod: Tauri resource_dir() contains tessdata/ bundled via tauri.conf.json.
+    // kreuzberg-tesseract's init(datadir, lang) treats datadir as the directory
+    // that directly contains <lang>.traineddata files (not the parent of tessdata/).
+    // Dev:  src-tauri/tessdata/ downloaded by build.rs.
+    // Prod: Tauri resource_dir()/tessdata/ bundled via tauri.conf.json.
     let tessdata_dir: Option<String> = {
         use tauri::Manager as _;
         let candidates = [
@@ -176,7 +177,7 @@ pub async fn extract(
         candidates
             .iter()
             .find(|d| d.join("tessdata").join("eng.traineddata").exists())
-            .map(|d| d.to_string_lossy().to_string())
+            .map(|d| d.join("tessdata").to_string_lossy().to_string())
     };
     if let Some(ref td) = tessdata_dir {
         eprintln!("tesseract tessdata found at {td:?}");

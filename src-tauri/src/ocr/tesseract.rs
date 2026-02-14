@@ -65,9 +65,9 @@ pub enum Preprocess {
 pub struct TesseractRecognizer {
     pub languages: Vec<String>,
     pub preprocess: Preprocess,
-    /// Parent directory of `tessdata/` (i.e. the dir that contains a `tessdata/`
-    /// subdirectory with `*.traineddata` files).  `None` → Tesseract uses
-    /// TESSDATA_PREFIX or the system default.
+    /// Directory that directly contains `<lang>.traineddata` files
+    /// (passed straight to kreuzberg-tesseract `init()`).
+    /// `None` → Tesseract uses TESSDATA_PREFIX or the system default.
     pub tessdata_dir: Option<String>,
 }
 
