@@ -21,13 +21,20 @@ jobs:
   # ────────────────────────────────────────────────────────────────────────────
   build-linux:
     name: Build (Linux)
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-22.04
+
+    env:
+      # Must match the Windows build and the deb.depends version (libavcodec61 = FFmpeg 7).
+      # Ubuntu 22.04 ships only FFmpeg 4.4 in apt; ffmpeg-next = "7" requires FFmpeg 7.x,
+      # so we download a pre-built package just like the Windows job does.
+      FFMPEG_VERSION: "7.1"
 
     steps:
       - uses: actions/checkout@v4
 
-      # System libraries required by Tauri (GTK/WebKit) and by our native deps
-      # (FFmpeg, Tesseract).  libclang-dev is needed by ffmpeg-sys-next's bindgen.
+      # System libraries required by Tauri (GTK/WebKit) and Tesseract.
+      # FFmpeg is NOT installed from apt — we provide FFmpeg 7 via BtbN below.
+      # libclang-dev is needed by ffmpeg-sys-next's bindgen.
       - name: Install system dependencies
         run: |
           sudo apt-get update
@@ -39,16 +46,32 @@ jobs:
             patchelf \
             libssl-dev \
             libclang-dev \
-            libavcodec-dev \
-            libavformat-dev \
-            libavutil-dev \
-            libavfilter-dev \
-            libavdevice-dev \
-            libswscale-dev \
-            libswresample-dev \
             libtesseract-dev \
             libleptonica-dev \
             file
+
+      # ── FFmpeg pre-built dev package ──────────────────────────────────────────
+      # BtbN's LGPL shared build includes headers, .so files, and pkg-config files.
+      # ffmpeg-sys-next reads FFMPEG_DIR directly, bypassing apt's older version.
+      - name: Restore FFmpeg cache
+        id: cache-ffmpeg
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/ffmpeg
+          key: ffmpeg-linux64-lgpl-shared-${{ env.FFMPEG_VERSION }}
+
+      - name: Download FFmpeg dev package
+        if: steps.cache-ffmpeg.outputs.cache-hit != 'true'
+        run: |
+          fname="ffmpeg-n${{ env.FFMPEG_VERSION }}-latest-linux64-lgpl-shared-${{ env.FFMPEG_VERSION }}.tar.xz"
+          url="https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/$fname"
+          echo "Downloading $url"
+          curl -L --retry 3 -o "$RUNNER_TEMP/ffmpeg.tar.xz" "$url"
+          mkdir -p "$RUNNER_TEMP/ffmpeg"
+          tar -xf "$RUNNER_TEMP/ffmpeg.tar.xz" -C "$RUNNER_TEMP/ffmpeg" --strip-components=1
+
+      - name: Set FFMPEG_DIR
+        run: echo "FFMPEG_DIR=$RUNNER_TEMP/ffmpeg" >> $GITHUB_ENV
 
       - uses: actions/setup-node@v4
         with:
