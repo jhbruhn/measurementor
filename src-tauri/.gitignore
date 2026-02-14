@@ -1,3 +1,6 @@
 target/
 models/*.onnx
 models/*.txt
+# Native libraries collected by build.rs — generated, not source-controlled
+libs/linux/
+libs/windows/

@@ -1,1 +1,23 @@
 [env]
+
+# ── Linux: embed library search path in the binary RPATH ─────────────────────
+# $ORIGIN resolves at runtime to the directory containing the binary.
+#
+# In an AppImage Tauri creates:
+#   binary:     AppDir/usr/bin/measurementor
+#   resource dir: AppDir/usr/bin/../resources  = AppDir/usr/resources/
+#
+# build.rs copies .so files into src-tauri/libs/linux/ and tauri.conf.json
+# bundles them as resources (destination "."), so they land at:
+#   AppDir/usr/resources/libavutil.so.59   etc.
+#
+# The RPATH below makes the dynamic linker search there first, allowing the
+# app to find its bundled libs without requiring them to be installed system-wide.
+#
+# For development builds the extra search path simply adds a non-existent
+# directory, which the linker silently ignores — system libs are found normally.
+[target.'cfg(target_os = "linux")']
+rustflags = [
+  "-C", "link-arg=-Wl,-rpath,$ORIGIN/../resources",
+  "-C", "link-arg=-Wl,-rpath,$ORIGIN",
+]
