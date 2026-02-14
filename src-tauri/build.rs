@@ -144,8 +144,12 @@ fn collect_libs() {
 }
 
 /// DLL name prefixes we want to bundle (matched against filenames in the search dirs).
+/// Includes FFmpeg, Tesseract, Leptonica, and Leptonica's image-format transitive
+/// deps installed by vcpkg (libjpeg-turbo, giflib, libarchive, libcurl, libpng,
+/// libtiff, libwebp, zlib, liblzma/xz, bzip2).
 #[cfg(target_os = "windows")]
 const WINDOWS_DLL_PREFIXES: &[&str] = &[
+    // FFmpeg
     "avutil",
     "avformat",
     "avcodec",
@@ -153,8 +157,20 @@ const WINDOWS_DLL_PREFIXES: &[&str] = &[
     "avdevice",
     "swscale",
     "swresample",
+    // Tesseract + Leptonica
     "tesseract",
     "leptonica",
+    // Leptonica image-format deps (vcpkg transitive)
+    "jpeg",       // jpeg62.dll  (libjpeg-turbo)
+    "gif",        // gif.dll     (giflib)
+    "libpng",     // libpng16.dll
+    "tiff",       // tiff.dll
+    "webp",       // webp.dll, webpdecoder.dll
+    "zlib",       // zlib1.dll
+    "archive",    // archive.dll (libarchive)
+    "libcurl",    // libcurl.dll
+    "liblzma",    // liblzma.dll (xz)
+    "bz2",        // bz2.dll     (bzip2)
 ];
 
 #[cfg(target_os = "windows")]
