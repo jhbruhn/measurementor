@@ -23,18 +23,17 @@ jobs:
     name: Build (Linux)
     runs-on: ubuntu-24.04
 
-    env:
-      # ffmpeg-next = "7" requires the FFmpeg 7 C library.
-      # Ubuntu 24.04 ships only FFmpeg 6.1 in apt, so we download a pre-built
-      # package from BtbN just like the Windows job does.
-      FFMPEG_VERSION: "7.1"
-
     steps:
       - uses: actions/checkout@v4
 
       # System libraries required by Tauri (GTK/WebKit) and Tesseract.
-      # FFmpeg is NOT installed from apt — we provide FFmpeg 7 via BtbN below.
-      # libclang-dev is needed by ffmpeg-sys-next's bindgen.
+      # FFmpeg is compiled from source by ffmpeg-sys-the-third (static feature)
+      # so no FFmpeg dev packages are needed here.
+      # nasm is required by FFmpeg's build system for assembly optimisations.
+      # libclang-dev is needed by ffmpeg-sys-the-third's bindgen step.
+      # libjack0 + libasound2-dev + libpulse-dev + libpipewire-0.3-dev are
+      # needed so linuxdeploy can bundle WebKit audio-backend stubs into the
+      # AppImage without "Could not find dependency" errors.
       - name: Install system dependencies
         run: |
           sudo apt-get update
@@ -48,31 +47,12 @@ jobs:
             libclang-dev \
             libtesseract-dev \
             libleptonica-dev \
-            file
-
-      # ── FFmpeg pre-built dev package ──────────────────────────────────────────
-      - name: Restore FFmpeg cache
-        id: cache-ffmpeg
-        uses: actions/cache@v4
-        with:
-          path: ${{ runner.temp }}/ffmpeg
-          key: ffmpeg-linux64-lgpl-shared-${{ env.FFMPEG_VERSION }}
-
-      - name: Download FFmpeg dev package
-        if: steps.cache-ffmpeg.outputs.cache-hit != 'true'
-        run: |
-          fname="ffmpeg-n${{ env.FFMPEG_VERSION }}-latest-linux64-lgpl-shared-${{ env.FFMPEG_VERSION }}.tar.xz"
-          url="https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/$fname"
-          echo "Downloading $url"
-          curl -L --retry 3 -o "$RUNNER_TEMP/ffmpeg.tar.xz" "$url"
-          mkdir -p "$RUNNER_TEMP/ffmpeg"
-          tar -xf "$RUNNER_TEMP/ffmpeg.tar.xz" -C "$RUNNER_TEMP/ffmpeg" --strip-components=1
-
-      - name: Set FFMPEG_DIR
-        run: |
-          echo "FFMPEG_DIR=$RUNNER_TEMP/ffmpeg" >> $GITHUB_ENV
-          echo "LIBRARY_PATH=$RUNNER_TEMP/ffmpeg/lib" >> $GITHUB_ENV
-          echo "PKG_CONFIG_PATH=$RUNNER_TEMP/ffmpeg/lib/pkgconfig" >> $GITHUB_ENV
+            file \
+            nasm \
+            libjack0 \
+            libasound2-dev \
+            libpulse-dev \
+            libpipewire-0.3-dev
 
       - uses: actions/setup-node@v4
         with:
@@ -124,48 +104,16 @@ jobs:
     runs-on: windows-latest
 
     env:
-      # FFmpeg 7.x matches the deb.depends version (libavcodec61) and ffmpeg-next = "7".
-      FFMPEG_VERSION: "7.1"
       # Enable vcpkg binary caching via GitHub Actions cache so compiled ports
-      # (tesseract and its deps) are restored on subsequent runs instead of
-      # being recompiled from source.
+      # are restored on subsequent runs instead of being recompiled from source.
       VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
 
     steps:
       - uses: actions/checkout@v4
 
-      # ── FFmpeg pre-built dev package ────────────────────────────────────────
-      # We use BtbN's shared build (headers + import libs + DLLs) so that
-      # ffmpeg-sys-next can compile against it without a full vcpkg FFmpeg build.
-      - name: Restore FFmpeg cache
-        id: cache-ffmpeg
-        uses: actions/cache@v4
-        with:
-          path: ${{ runner.temp }}\ffmpeg
-          key: ffmpeg-win64-lgpl-shared-${{ env.FFMPEG_VERSION }}
-
-      - name: Download FFmpeg dev package
-        if: steps.cache-ffmpeg.outputs.cache-hit != 'true'
-        shell: pwsh
-        run: |
-          $fname = "ffmpeg-n${{ env.FFMPEG_VERSION }}-latest-win64-lgpl-shared-${{ env.FFMPEG_VERSION }}.zip"
-          $url   = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/$fname"
-          $zip   = "$env:RUNNER_TEMP\ffmpeg.zip"
-          Write-Host "Downloading $url"
-          Invoke-WebRequest -Uri $url -OutFile $zip -MaximumRetryCount 3 -RetryIntervalSec 5
-          Expand-Archive -Path $zip -DestinationPath "$env:RUNNER_TEMP\ffmpeg"
-
-      - name: Set FFMPEG_DIR
-        shell: pwsh
-        run: |
-          $dir = (Get-ChildItem -Directory "$env:RUNNER_TEMP\ffmpeg" | Select-Object -First 1).FullName
-          Write-Host "FFMPEG_DIR=$dir"
-          echo "FFMPEG_DIR=$dir" >> $env:GITHUB_ENV
-
       # ── Tesseract via vcpkg ─────────────────────────────────────────────────
-      # The `tesseract` Rust crate uses the `vcpkg` Rust crate on Windows to
-      # locate the library.  VCPKG_ROOT must point at an installation that
-      # contains tesseract:x64-windows (Tesseract >= 5.2 for TessBaseAPIInit5).
+      # FFmpeg is compiled from source by ffmpeg-sys-the-third (static feature)
+      # so only Tesseract needs installing here.
       #
       # lukka/run-vcpkg handles caching automatically; the pinned commit is the
       # vcpkg 2026.01.16 release (Tesseract 5.4 in the registry).
@@ -209,7 +157,7 @@ jobs:
           # VCPKGRS_DYNAMIC=1 tells the `vcpkg` Rust crate to link the
           # tesseract DLL rather than attempting a static link.
           VCPKGRS_DYNAMIC: "1"
-          # bindgen (used by ffmpeg-sys-next and tesseract-plumbing) needs
+          # bindgen (used by ffmpeg-sys-the-third and tesseract-plumbing) needs
           # libclang.  LLVM is pre-installed on windows-latest at this path.
           LIBCLANG_PATH: C:\Program Files\LLVM\bin
 

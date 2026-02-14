@@ -4,7 +4,7 @@
 ; first, then directories on PATH.  Tauri places resources in a sub-folder
 ; ($INSTDIR\resources\), which is NOT in that search path.
 ;
-; Solution: copy the bundled FFmpeg / Tesseract DLLs from the resources folder
+; Solution: copy the bundled Tesseract DLLs from the resources folder
 ; to $INSTDIR itself so Windows finds them next to the executable.
 ;
 ; On uninstall the same DLLs are removed from $INSTDIR.
@@ -19,14 +19,7 @@
 !macro customUninstall
   ; Remove the DLLs that customInstall copied to $INSTDIR.
   ; Uses a wildcard per known prefix to avoid deleting unrelated user files.
-  ; FFmpeg
-  Delete "$INSTDIR\avutil*.dll"
-  Delete "$INSTDIR\avformat*.dll"
-  Delete "$INSTDIR\avcodec*.dll"
-  Delete "$INSTDIR\avfilter*.dll"
-  Delete "$INSTDIR\avdevice*.dll"
-  Delete "$INSTDIR\swscale*.dll"
-  Delete "$INSTDIR\swresample*.dll"
+  ; FFmpeg is statically linked — no av*.dll / sw*.dll to clean up.
   ; Tesseract + Leptonica
   Delete "$INSTDIR\tesseract*.dll"
   Delete "$INSTDIR\leptonica*.dll"

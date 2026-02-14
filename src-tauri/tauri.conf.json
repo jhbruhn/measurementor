@@ -44,13 +44,6 @@
     "linux": {
       "deb": {
         "depends": [
-          "libavcodec61 | libavcodec-extra",
-          "libavformat61",
-          "libavutil59",
-          "libswscale8",
-          "libswresample5",
-          "libavfilter10",
-          "libavdevice61",
           "libtesseract5",
           "libleptonica6"
         ]

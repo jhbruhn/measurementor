@@ -1,6 +1,6 @@
 use base64::Engine;
-use ffmpeg_next as ffmpeg;
-use ffmpeg_next::{
+use ffmpeg_the_third as ffmpeg;
+use ffmpeg_the_third::{
     codec::context::Context as CodecCtx,
     format::Pixel,
     frame::Video as VideoFrame,
@@ -118,7 +118,7 @@ pub fn decode_frame_at(path: &str, timestamp: f64) -> Result<(Vec<u8>, u32, u32)
     let mut rgb_frame = VideoFrame::empty();
     let mut found = false;
 
-    'outer: for (stream, packet) in ictx.packets() {
+    'outer: for (stream, packet) in ictx.packets().filter_map(|r| r.ok()) {
         if stream.index() != stream_idx {
             continue;
         }

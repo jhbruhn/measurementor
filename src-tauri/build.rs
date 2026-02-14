@@ -119,7 +119,6 @@ fn download_tessdata() {
 // analysing the binary's ldd output.  The RPATH embedded via .cargo/config.toml
 // covers running the unwrapped binary directly (dev / non-AppImage use).
 fn collect_libs() {
-    println!("cargo:rerun-if-env-changed=FFMPEG_DIR");
     println!("cargo:rerun-if-env-changed=VCPKG_ROOT");
     println!("cargo:rerun-if-env-changed=SKIP_LIB_COLLECT");
 
@@ -144,19 +143,12 @@ fn collect_libs() {
 }
 
 /// DLL name prefixes we want to bundle (matched against filenames in the search dirs).
-/// Includes FFmpeg, Tesseract, Leptonica, and Leptonica's image-format transitive
-/// deps installed by vcpkg (libjpeg-turbo, giflib, libarchive, libcurl, libpng,
+/// Includes Tesseract, Leptonica, and Leptonica's image-format transitive deps
+/// installed by vcpkg (libjpeg-turbo, giflib, libarchive, libcurl, libpng,
 /// libtiff, libwebp, zlib, liblzma/xz, bzip2).
+/// FFmpeg is compiled statically (via ffmpeg-the-third build feature) and needs no DLLs.
 #[cfg(target_os = "windows")]
 const WINDOWS_DLL_PREFIXES: &[&str] = &[
-    // FFmpeg
-    "avutil",
-    "avformat",
-    "avcodec",
-    "avfilter",
-    "avdevice",
-    "swscale",
-    "swresample",
     // Tesseract + Leptonica
     "tesseract",
     "leptonica",
@@ -176,15 +168,11 @@ const WINDOWS_DLL_PREFIXES: &[&str] = &[
 #[cfg(target_os = "windows")]
 fn collect_libs_windows(dest: &std::path::Path) {
     // Candidate directories to search for DLLs, in priority order:
-    //   1. FFMPEG_DIR\bin   (set by ffmpeg-sys-next when FFMPEG_DIR is configured)
-    //   2. VCPKG_ROOT\installed\x64-windows\bin   (vcpkg install)
-    //   3. Entries on PATH that contain matching DLLs (last resort)
+    //   1. VCPKG_ROOT\installed\x64-windows\bin   (tesseract:x64-windows)
+    //   2. Entries on PATH that contain matching DLLs (last resort)
     let mut search_dirs: Vec<std::path::PathBuf> = Vec::new();
 
-    if let Ok(ffmpeg_dir) = std::env::var("FFMPEG_DIR") {
-        search_dirs.push(std::path::PathBuf::from(&ffmpeg_dir).join("bin"));
-        search_dirs.push(std::path::PathBuf::from(&ffmpeg_dir)); // sometimes DLLs are at root
-    }
+    // FFmpeg is statically linked — no FFmpeg DLLs to collect.
     if let Ok(vcpkg_root) = std::env::var("VCPKG_ROOT") {
         search_dirs.push(
             std::path::PathBuf::from(&vcpkg_root)
@@ -236,7 +224,7 @@ fn collect_libs_windows(dest: &std::path::Path) {
     if found.is_empty() {
         println!(
             "cargo:warning=collect_libs: no FFmpeg/Tesseract DLLs found. \
-             Set FFMPEG_DIR or VCPKG_ROOT, or add the DLL directory to PATH."
+             Set VCPKG_ROOT, or add the DLL directory to PATH."
         );
     }
 }
