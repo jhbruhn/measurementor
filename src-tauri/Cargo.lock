@@ -2649,6 +2649,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-dialog",
  "tesseract",
+ "tesseract-plumbing",
  "ureq 2.12.1",
 ]
 
