@@ -96,10 +96,12 @@ pub fn decode_frame_at(path: &str, timestamp: f64) -> Result<(Vec<u8>, u32, u32)
     let height = decoder.height();
 
     // Seek to the requested time (AV_TIME_BASE = 1 000 000 µs / s).
-    // `..seek_ts` passes max_ts = seek_ts to avformat_seek_file, which
-    // lands at the nearest keyframe ≤ timestamp — same as `-ss` before `-i`.
+    // `..=seek_ts` gives avformat_seek_file(ctx, -1, INT64_MIN, ts, ts, 0),
+    // landing at the nearest keyframe ≤ timestamp — same as `-ss` before `-i`.
+    // NOTE: `..seek_ts` (exclusive end) would set max_ts = ts-1 < ts, which
+    // violates min≤target≤max and makes ffmpeg return AVERROR(EPERM).
     let seek_ts = (timestamp.max(0.0) * 1_000_000.0) as i64;
-    ictx.seek(seek_ts, ..seek_ts)
+    ictx.seek(seek_ts, ..=seek_ts)
         .map_err(|e| format!("seek to {timestamp:.3}s: {e}"))?;
     decoder.flush(); // clear decoder buffers after seek
 
