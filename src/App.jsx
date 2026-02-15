@@ -3,72 +3,9 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
 import CanvasPanel from './components/CanvasPanel.jsx';
+import { Btn, Card, CardTitle, Input, Label, Select } from './components/ui.jsx';
 import { interpolate } from './helpers.js';
 import './App.css';
-
-// ── Shared primitives ──────────────────────────────────────────────────────
-
-function Input(props) {
-  return (
-    <input
-      {...props}
-      className={
-        'w-full text-sm border border-gray-200 rounded px-2 py-1.5 ' +
-        'focus:outline-none focus:border-green-400 bg-white ' +
-        (props.className || '')
-      }
-    />
-  );
-}
-
-function Select({ children, ...props }) {
-  return (
-    <select
-      {...props}
-      className={
-        'w-full text-sm border border-gray-200 rounded px-2 py-1.5 bg-white ' +
-        'focus:outline-none focus:border-green-400 ' +
-        (props.className || '')
-      }
-    >
-      {children}
-    </select>
-  );
-}
-
-function Btn({ variant = 'default', full, disabled, onClick, title, children, className = '' }) {
-  const base = 'text-sm font-medium rounded px-3 py-1.5 transition-colors disabled:opacity-50 ';
-  const variants = {
-    default: 'bg-gray-100 hover:bg-gray-200 text-gray-700 border border-gray-200',
-    primary: 'bg-green-600 hover:bg-green-700 text-white',
-    danger:  'bg-red-600 hover:bg-red-700 text-white',
-    ghost:   'text-gray-400 hover:text-red-500 px-1 py-0.5',
-  };
-  return (
-    <button
-      onClick={onClick} title={title} disabled={disabled}
-      className={base + variants[variant] + (full ? ' w-full' : '') + ' ' + className}
-    >
-      {children}
-    </button>
-  );
-}
-
-function Card({ children, className = '' }) {
-  return (
-    <div className={'rounded-lg border border-gray-200 bg-white p-3 flex flex-col gap-2 ' + className}>
-      {children}
-    </div>
-  );
-}
-
-function CardTitle({ children }) {
-  return <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">{children}</span>;
-}
-
-function Label({ children }) {
-  return <label className="block text-xs text-gray-500 mb-0.5">{children}</label>;
-}
 
 // ── Seek bar ───────────────────────────────────────────────────────────────
 
@@ -103,18 +40,19 @@ function SeekBar({ ts, vinfo, keyframes, onChange }) {
           className="relative w-full accent-green-600"
           min={0} max={max.toFixed(3)} step={step}
           value={ts}
+          aria-label="Seek position"
           onChange={e => onChange(parseFloat(e.target.value))}
         />
       </div>
       <div className="flex items-center gap-2">
         <span className="text-xs font-mono text-gray-600 tabular-nums">{ts.toFixed(2)} s</span>
         {onKf && (
-          <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 font-medium">
+          <span className="text-xs px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 font-medium">
             ● keyframe
           </span>
         )}
         {!onKf && keyframes.length > 0 && (
-          <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500">
+          <span className="text-xs px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500">
             ◦ interpolated
           </span>
         )}
@@ -126,15 +64,17 @@ function SeekBar({ ts, vinfo, keyframes, onChange }) {
 // ── Sidebar ────────────────────────────────────────────────────────────────
 
 function Sidebar({
-  vpath, setVpath, vinfo, onLoadVideo,
+  vpath, vinfo, onLoadVideo, videoError,
   names, onRenameRegion, onDeleteRegion,
   expectations, onSetExpectation,
   keyframes, ts, onSeekTo, onDeleteKf,
   onSaveConfig, onLoadConfig,
+  isDirty,
 }) {
-  const [cfgPath, setCfgPath]           = useState('regions.json');
-  const [cfgMsg, setCfgMsg]             = useState('');
-  const [expandedRegion, setExpanded]   = useState(null);
+  const [cfgPath, setCfgPath]         = useState('regions.json');
+  const [cfgMsg, setCfgMsg]           = useState('');
+  const [expandedRegion, setExpanded] = useState(null);
+  const [showKfHelp, setShowKfHelp]   = useState(false);
 
   async function pickAndLoadVideo() {
     const path = await openDialog({
@@ -180,14 +120,19 @@ function Sidebar({
           {vpath ? '⟳ Change video…' : 'Select video…'}
         </Btn>
         {vpath && (
-          <span className="text-[11px] text-gray-500 truncate" title={vpath}>
+          <span className="text-xs text-gray-500 truncate" title={vpath}>
             {vpath.split(/[\\/]/).pop()}
           </span>
         )}
         {vinfo && (
-          <span className="text-[11px] text-gray-400">
+          <span className="text-xs text-gray-400">
             {vinfo.width}×{vinfo.height} · {vinfo.fps.toFixed(1)} fps · {vinfo.duration.toFixed(1)}s
           </span>
+        )}
+        {videoError && (
+          <div className="rounded border border-red-200 bg-red-50 px-2 py-1.5 text-xs text-red-700">
+            {videoError}
+          </div>
         )}
       </Card>
 
@@ -201,13 +146,16 @@ function Sidebar({
             const expanded = expandedRegion === n;
             const toggle   = () => setExpanded(expanded ? null : n);
             const set      = (field, val) => onSetExpectation(n, field, val);
+            const panelId  = `region-panel-${i}`;
             return (
               <div key={i} className="border border-gray-100 rounded overflow-hidden">
                 {/* Header row */}
                 <div className="flex items-center gap-1 px-1 py-0.5">
                   <button
                     onClick={toggle}
-                    className="text-[10px] text-gray-400 hover:text-gray-600 w-4 shrink-0 text-center"
+                    aria-expanded={expanded}
+                    aria-controls={panelId}
+                    className="text-xs text-gray-400 hover:text-gray-600 w-4 shrink-0 text-center focus:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-1 rounded"
                     title={expanded ? 'Collapse' : 'Configure expectations'}
                   >
                     {expanded ? '▼' : '▶'}
@@ -222,7 +170,7 @@ function Sidebar({
 
                 {/* Expectations panel */}
                 {expanded && (
-                  <div className="bg-gray-50/80 border-t border-gray-100 px-2 py-2 flex flex-col gap-2">
+                  <div id={panelId} className="bg-gray-50/80 border-t border-gray-100 px-2 py-2 flex flex-col gap-2">
                     <label className="flex items-start gap-2 text-xs text-gray-600 cursor-pointer select-none">
                       <input
                         type="checkbox" checked={!!exp.numeric}
@@ -231,7 +179,7 @@ function Sidebar({
                       />
                       <span>
                         Numeric region
-                        <span className="block text-[10px] text-gray-400 font-normal">
+                        <span className="block text-xs text-gray-400 font-normal">
                           OCR will prefer numeric readings; enables range, digit, and deviation constraints below.
                         </span>
                       </span>
@@ -240,7 +188,7 @@ function Sidebar({
                     {exp.numeric && (<>
                       {/* Range */}
                       <div>
-                        <span className="text-[10px] font-medium text-gray-400 uppercase tracking-wider">Value range</span>
+                        <span className="text-xs font-medium text-gray-400 uppercase tracking-wider">Value range</span>
                         <div className="grid grid-cols-2 gap-1 mt-1">
                           <div>
                             <Label>Min</Label>
@@ -257,7 +205,7 @@ function Sidebar({
 
                       {/* Digit structure */}
                       <div>
-                        <span className="text-[10px] font-medium text-gray-400 uppercase tracking-wider">Digit structure</span>
+                        <span className="text-xs font-medium text-gray-400 uppercase tracking-wider">Digit structure</span>
                         <div className="grid grid-cols-2 gap-1 mt-1">
                           <div>
                             <Label>Total digits</Label>
@@ -292,11 +240,28 @@ function Sidebar({
 
       {/* Keyframes */}
       <Card>
-        <CardTitle>Keyframes</CardTitle>
-        <span className="text-[11px] text-gray-400">Auto-created when you move a region.</span>
+        <div className="flex items-center gap-1.5">
+          <CardTitle>Keyframes</CardTitle>
+          <button
+            onClick={() => setShowKfHelp(v => !v)}
+            aria-expanded={showKfHelp}
+            aria-label="How keyframes work"
+            className="ml-auto text-xs text-gray-400 hover:text-gray-600 w-5 h-5 rounded-full border border-gray-200 flex items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-1"
+            title="How keyframes work"
+          >
+            ?
+          </button>
+        </div>
+        {showKfHelp && (
+          <div className="rounded border border-blue-100 bg-blue-50 px-2 py-2 text-xs text-blue-800 leading-relaxed">
+            Keyframes record region positions at a specific moment. <strong>Move a region at time A</strong>, scrub to time B and move it again. The tool interpolates positions between keyframes.
+            <br /><br />
+            At least 2 keyframes at different timestamps are required before extracting.
+          </div>
+        )}
         <div className="flex flex-col gap-1">
           {!keyframes.length
-            ? <span className="text-xs text-gray-400">No keyframes yet.</span>
+            ? <span className="text-xs text-gray-400">No keyframes yet. Move a region to create one.</span>
             : (() => {
                 const sorted = [...keyframes].sort((a, b) => a.timestamp - b.timestamp);
                 const hasRange = sorted.length >= 2;
@@ -315,12 +280,12 @@ function Sidebar({
                       }
                     >
                       {isStart && (
-                        <span className="shrink-0 px-1 py-0.5 rounded text-[10px] font-semibold bg-green-100 text-green-700 uppercase tracking-wide">
+                        <span className="shrink-0 px-1 py-0.5 rounded text-xs font-semibold bg-green-100 text-green-700 uppercase tracking-wide">
                           Start
                         </span>
                       )}
                       {isEnd && (
-                        <span className="shrink-0 px-1 py-0.5 rounded text-[10px] font-semibold bg-red-100 text-red-700 uppercase tracking-wide">
+                        <span className="shrink-0 px-1 py-0.5 rounded text-xs font-semibold bg-red-100 text-red-700 uppercase tracking-wide">
                           End
                         </span>
                       )}
@@ -342,18 +307,23 @@ function Sidebar({
 
       {/* Config */}
       <Card>
-        <CardTitle>Config file</CardTitle>
+        <div className="flex items-center gap-1">
+          <CardTitle>Config file</CardTitle>
+          {isDirty && (
+            <span className="ml-1 text-xs text-amber-500" title="Unsaved changes">●</span>
+          )}
+        </div>
         <div className="flex gap-1.5">
           <Btn full onClick={pickConfigSave}>Save…</Btn>
           <Btn full onClick={pickConfigLoad}>Load…</Btn>
         </div>
-        {cfgMsg && (
-          <span className={
-            'text-xs ' + (cfgMsg.startsWith('Error') ? 'text-red-500' : 'text-green-600')
-          }>
-            {cfgMsg}
-          </span>
-        )}
+        <span
+          role="status"
+          aria-live="polite"
+          className={'text-xs ' + (cfgMsg.startsWith('Error') ? 'text-red-500' : 'text-green-600')}
+        >
+          {cfgMsg}
+        </span>
       </Card>
     </aside>
   );
@@ -375,35 +345,83 @@ function confBar(c) {
   return '#ef4444';
 }
 
+function SortTh({ col, label, sortCol, sortDir, onSort }) {
+  const active = sortCol === col;
+  return (
+    <th
+      scope="col"
+      onClick={() => onSort(col)}
+      className={
+        'px-3 py-2 text-left font-medium border-b border-gray-200 whitespace-nowrap ' +
+        'cursor-pointer select-none hover:bg-gray-50 ' +
+        (active ? 'text-gray-700' : 'text-gray-400')
+      }
+    >
+      {label}
+      {active && <span className="ml-1 text-gray-500">{sortDir === 'asc' ? '↑' : '↓'}</span>}
+    </th>
+  );
+}
+
 function ExtractTab({ vpath, vinfo, keyframes, expectations }) {
   const [fpsSample,     setFpsSample]     = useState(30);
   const [lang,          setLang]          = useState('en,de');
   const [preprocess,    setPreprocess]    = useState(true);
   const [oarThreshold,  setOarThreshold]  = useState(90);
   const [showAdvanced,  setShowAdvanced]  = useState(false);
-  const [running,     setRunning]     = useState(false);
-  const [results,     setResults]     = useState(null);
-  const [csvData,     setCsvData]     = useState(null);
-  const [progress,    setProgress]    = useState(null);
+  const [running,       setRunning]       = useState(false);
+  const [results,       setResults]       = useState(null);
+  const [csvData,       setCsvData]       = useState(null);
+  const [progress,      setProgress]      = useState(null);
+  const [extractError,  setExtractError]  = useState('');
+  const [exportError,   setExportError]   = useState('');
+  const [sortCol,       setSortCol]       = useState('ts');
+  const [sortDir,       setSortDir]       = useState('asc');
+
   // Pivot table state: { [frame]: { frame, timestamp, [regionName]: { value, confidence } } }
-  const [liveData,    setLiveData]    = useState({});
-  const [liveRegions, setLiveRegions] = useState([]);  // ordered region names
-  // { [regionName]: { preview: string, value: string, confidence: number, source: string } }
+  const [liveData,     setLiveData]     = useState({});
+  const [liveRegions,  setLiveRegions]  = useState([]);
   const [lastPreviews, setLastPreviews] = useState({});
   const unlistenRef = useRef(null);
 
+  // R18: reset sample rate default when video changes
+  useEffect(() => {
+    if (vinfo) {
+      setFpsSample(Math.round(vinfo.fps));
+    }
+  }, [vinfo]);
+
   const nRegions = keyframes.length ? Math.max(...keyframes.map(k => k.regions.length), 0) : 0;
   const nFrames  = vinfo ? Math.floor(vinfo.total_frames / fpsSample) : 0;
+
+  function handleSort(col) {
+    if (sortCol === col) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortCol(col);
+      setSortDir('asc');
+    }
+  }
 
   async function cancelExtract() {
     try { await invoke('cancel_extract'); } catch (_) {}
   }
 
   async function startExtract() {
-    if (keyframes.length < 2) { alert('Define at least 2 keyframes before extracting.'); return; }
-    if (!vpath)               { alert('Load a video first.'); return; }
+    setExtractError('');
+    if (!vpath) {
+      setExtractError('Load a video first.');
+      return;
+    }
+    if (keyframes.length < 2) {
+      setExtractError('Define at least 2 keyframes before extracting.');
+      return;
+    }
     const uniqueTs = new Set(keyframes.map(k => k.timestamp));
-    if (uniqueTs.size < 2)    { alert('Keyframes must have different timestamps.'); return; }
+    if (uniqueTs.size < 2) {
+      setExtractError('Keyframes must have different timestamps.');
+      return;
+    }
 
     setRunning(true);
     setResults(null);
@@ -415,7 +433,6 @@ function ExtractTab({ vpath, vinfo, keyframes, expectations }) {
 
     unlistenRef.current = await listen('extraction_progress', event => {
       const p = event.payload;
-      // p.regions is an array — one entry per region in this frame
       setProgress({ elapsed_frames: p.elapsed_frames, total: p.total });
       setLastPreviews(prev => {
         const next = { ...prev };
@@ -451,7 +468,7 @@ function ExtractTab({ vpath, vinfo, keyframes, expectations }) {
       setCsvData(res.csv);
       setProgress(null);
     } catch (e) {
-      alert('Extraction error: ' + e);
+      setExtractError('Extraction error: ' + e);
       setProgress(null);
     } finally {
       if (unlistenRef.current) { unlistenRef.current(); unlistenRef.current = null; }
@@ -461,6 +478,7 @@ function ExtractTab({ vpath, vinfo, keyframes, expectations }) {
 
   async function exportCsv() {
     if (!csvData) return;
+    setExportError('');
     const path = await saveDialog({
       title: 'Export CSV',
       defaultPath: 'measurements.csv',
@@ -468,7 +486,7 @@ function ExtractTab({ vpath, vinfo, keyframes, expectations }) {
     });
     if (path) {
       try { await invoke('save_csv', { path, csv: csvData }); }
-      catch (e) { alert('Export failed: ' + e); }
+      catch (e) { setExportError('Export failed: ' + e); }
     }
   }
 
@@ -476,10 +494,21 @@ function ExtractTab({ vpath, vinfo, keyframes, expectations }) {
     ? Math.min(100, Math.round((progress.elapsed_frames / progress.total) * 100))
     : 0;
 
-  // Rows sorted newest-first for live monitoring; cap at 500 visible rows
   const liveRows = Object.values(liveData)
-    .sort((a, b) => b.frame - a.frame)
+    .sort((a, b) => {
+      let cmp;
+      if (sortCol === 'ts') {
+        cmp = a.frame - b.frame;
+      } else {
+        const av = a[sortCol]?.value ?? '';
+        const bv = b[sortCol]?.value ?? '';
+        cmp = av < bv ? -1 : av > bv ? 1 : 0;
+      }
+      return sortDir === 'asc' ? cmp : -cmp;
+    })
     .slice(0, 500);
+
+  const needsKeyframes = keyframes.length < 2;
 
   return (
     <div className="flex flex-col gap-4 p-4 overflow-auto">
@@ -491,11 +520,10 @@ function ExtractTab({ vpath, vinfo, keyframes, expectations }) {
             <div>
               <Label>Sample every N frames</Label>
               <Input type="number" value={fpsSample} min={1} max={300}
-                onChange={e => setFpsSample(parseInt(e.target.value) || 30)} />
+                onChange={e => setFpsSample(parseInt(e.target.value) || 1)} />
               {vinfo && (
-                <span className="text-[10px] text-gray-400 mt-0.5 block">
-                  {(fpsSample / vinfo.fps).toFixed(3)} s resolution
-                  · {vinfo.fps.toFixed(1)} fps ÷ {fpsSample}
+                <span className="text-xs text-gray-400 mt-0.5 block">
+                  ≈ {(fpsSample / vinfo.fps).toFixed(2)} s between samples at {vinfo.fps.toFixed(1)} fps
                 </span>
               )}
             </div>
@@ -515,18 +543,20 @@ function ExtractTab({ vpath, vinfo, keyframes, expectations }) {
 
         {/* Advanced */}
         <button
-          className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 mt-1 select-none"
+          className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 mt-1 select-none focus:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-1 rounded"
           onClick={() => setShowAdvanced(v => !v)}
+          aria-expanded={showAdvanced}
+          aria-controls="advanced-settings"
         >
           {showAdvanced ? '▼' : '▶'} Advanced
         </button>
         {showAdvanced && (
-          <div className="mt-2">
+          <div id="advanced-settings" className="mt-2">
             <Label>Fast-path confidence threshold (%)</Label>
             <Input type="number" value={oarThreshold} min={0} max={100}
               onChange={e => setOarThreshold(parseInt(e.target.value) || 90)}
               title="If the primary OCR engine's confidence reaches this value, the secondary engine is skipped" />
-            <span className="text-[10px] text-gray-400 mt-0.5 block">
+            <span className="text-xs text-gray-400 mt-0.5 block">
               Primary OCR result is used directly when confidence ≥ this value; lower values force more cross-checking.
             </span>
           </div>
@@ -539,11 +569,23 @@ function ExtractTab({ vpath, vinfo, keyframes, expectations }) {
         )}
       </Card>
 
+      {/* Keyframe warning */}
+      {needsKeyframes && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-800">
+          Add at least 2 keyframes with different timestamps in the <strong>Configure Regions</strong> tab before extracting.
+        </div>
+      )}
+
       {/* Run / Cancel */}
       <Card>
+        {extractError && (
+          <div className="rounded border border-red-200 bg-red-50 px-2 py-1.5 text-xs text-red-700">
+            {extractError}
+          </div>
+        )}
         <div className="flex gap-2">
           <Btn variant="primary" full onClick={startExtract} disabled={running}>
-            {running ? '⏳ Extracting…' : '▶ Start extraction'}
+            {running ? '⏳ Extracting…' : 'Start extraction'}
           </Btn>
           {running && (
             <Btn variant="danger" onClick={cancelExtract} title="Cancel extraction">
@@ -557,29 +599,29 @@ function ExtractTab({ vpath, vinfo, keyframes, expectations }) {
       {running && progress && (
         <Card>
           <div className="w-full h-2 rounded-full bg-gray-100 overflow-hidden">
-            <div className="h-full bg-green-500 transition-all duration-150" style={{ width: `${pct}%` }} />
+            <div className="h-full bg-green-500 transition-all duration-150" style={{ width: `${pct}%` }}
+              role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}
+              aria-label="Extraction progress" />
           </div>
           <div className="flex items-center justify-between text-xs text-gray-500 mt-1">
-            <span>
-              Frame {progress.elapsed_frames} / {progress.total}
-            </span>
+            <span>Frame {progress.elapsed_frames} / {progress.total}</span>
             <span className="font-mono tabular-nums">{pct}%</span>
           </div>
           {Object.keys(lastPreviews).length > 0 && (
             <div className="mt-2 flex flex-col gap-1.5">
-              <span className="text-[10px] text-gray-400 uppercase tracking-wider">Last OCR input per region</span>
+              <span className="text-xs text-gray-400 uppercase tracking-wider">Last OCR input per region</span>
               <div className="flex flex-wrap gap-3">
                 {Object.entries(lastPreviews).map(([name, { preview, value, confidence, source }]) => (
                   <div key={name} className="flex flex-col gap-1 min-w-0">
                     <div className="flex items-baseline gap-1.5 flex-wrap">
-                      <span className="text-[10px] font-semibold text-gray-500 truncate">{name}</span>
-                      <span className="text-[11px] font-mono text-gray-800">{value || '—'}</span>
-                      <span className="text-[10px] font-mono" style={{ color: confBar(confidence) }}>
+                      <span className="text-xs font-semibold text-gray-500 truncate">{name}</span>
+                      <span className="text-xs font-mono text-gray-800">{value || '—'}</span>
+                      <span className="text-xs font-mono" style={{ color: confBar(confidence) }}>
                         {Math.round((confidence ?? 0) * 100)}%
                       </span>
                       {source && (
                         <span className={
-                          'text-[9px] px-1 py-0.5 rounded font-medium ' +
+                          'text-xs px-1 py-0.5 rounded font-medium ' +
                           (source === 'oar-ocr'
                             ? 'bg-blue-100 text-blue-700'
                             : 'bg-gray-100 text-gray-500')
@@ -609,20 +651,20 @@ function ExtractTab({ vpath, vinfo, keyframes, expectations }) {
             <CardTitle>
               {running ? `Live results — ${liveRows.length} frames` : `Results — ${liveRows.length} frames`}
             </CardTitle>
-            {csvData && <Btn onClick={exportCsv}>↓ Export CSV…</Btn>}
+            <div className="flex items-center gap-2">
+              {exportError && (
+                <span className="text-xs text-red-600">{exportError}</span>
+              )}
+              {csvData && <Btn onClick={exportCsv}>↓ Export CSV…</Btn>}
+            </div>
           </div>
-          <div className="overflow-auto max-h-[32rem]">
+          <div className="overflow-auto max-h-[32rem] select-text">
             <table className="w-full text-xs border-collapse">
               <thead className="sticky top-0 z-10 bg-white">
                 <tr>
-                  <th className="px-3 py-2 text-left font-medium text-gray-400 border-b border-gray-200 whitespace-nowrap">
-                    t (s)
-                  </th>
+                  <SortTh col="ts" label="t (s)" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
                   {liveRegions.map(r => (
-                    <th key={r}
-                      className="px-3 py-2 text-left font-medium text-gray-600 border-b border-gray-200 whitespace-nowrap">
-                      {r}
-                    </th>
+                    <SortTh key={r} col={r} label={r} sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
                   ))}
                 </tr>
               </thead>
@@ -634,24 +676,34 @@ function ExtractTab({ vpath, vinfo, keyframes, expectations }) {
                     </td>
                     {liveRegions.map(r => {
                       const e = row[r];
+                      const confPct = Math.round((e?.confidence ?? 0) * 100);
                       return (
                         <td key={r} className="px-3 py-1.5"
-                          style={{ background: confBg(e?.confidence) }}>
+                          style={{ background: confBg(e?.confidence) }}
+                          title={e ? `${e.value || '—'} — ${confPct}% confidence${e.source ? ` (${e.source})` : ''}` : undefined}>
                           {e ? (
                             <>
                               <div className="font-mono font-semibold text-gray-800 leading-tight">
                                 {e.value || '—'}
                               </div>
-                              <div className="mt-1 h-[3px] rounded-full bg-gray-200 overflow-hidden w-16">
+                              <div
+                                className="mt-1 h-[3px] rounded-full bg-gray-200 overflow-hidden w-16"
+                                role="meter"
+                                aria-valuenow={confPct}
+                                aria-valuemin={0}
+                                aria-valuemax={100}
+                                aria-label={`${confPct}% confidence`}
+                              >
                                 <div style={{
                                   height: '100%',
-                                  width: `${Math.round((e.confidence ?? 0) * 100)}%`,
+                                  width: `${confPct}%`,
                                   background: confBar(e.confidence ?? 0),
                                   borderRadius: '9999px',
                                 }} />
                               </div>
+                              <span className="sr-only">{confPct}% confidence</span>
                               {e.source === 'oar-ocr' && (
-                                <div className="mt-0.5 text-[9px] text-blue-500 font-medium">oar</div>
+                                <div className="mt-0.5 text-xs text-blue-500 font-medium">oar</div>
                               )}
                             </>
                           ) : (
@@ -670,8 +722,6 @@ function ExtractTab({ vpath, vinfo, keyframes, expectations }) {
     </div>
   );
 }
-
-// ── App root ───────────────────────────────────────────────────────────────
 
 // ── Helpers for expectations ────────────────────────────────────────────────
 
@@ -719,6 +769,21 @@ export default function App() {
   const [expectations, setExpectations] = useState({});
   const [ts,           setTs]           = useState(0);
   const [activeTab,    setActiveTab]    = useState('configure');
+  const [videoError,   setVideoError]   = useState('');
+  const [toastMsg,     setToastMsg]     = useState('');
+  const [savedSnapshot, setSavedSnapshot] = useState(null);
+  const toastTimerRef = useRef(null);
+  const canvasRef     = useRef(null);
+
+  // isDirty: true when state has changed since last save/load
+  const isDirty = savedSnapshot !== null &&
+    JSON.stringify({ names, keyframes, expectations }) !== savedSnapshot;
+
+  const showToast = useCallback((msg) => {
+    setToastMsg(msg);
+    clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => setToastMsg(''), 1500);
+  }, []);
 
   function setExpectation(name, field, value) {
     setExpectations(prev => ({
@@ -727,11 +792,10 @@ export default function App() {
     }));
   }
 
-  const canvasRef = useRef(null);
-
   async function loadVideo(path) {
     const p = (path ?? vpath).trim();
     if (!p) return;
+    setVideoError('');
     try {
       const info = await invoke('get_video_info', { path: p });
       setVpath(p);
@@ -739,11 +803,11 @@ export default function App() {
       setTs(0);
     } catch (e) {
       setVinfo(null);
-      alert('Error loading video: ' + e);
+      setVideoError('Error loading video: ' + e);
     }
   }
 
-  // ── Region events ─────────────────────────────────────────────────────────
+  // ── Region events ──────────────────────────────────────────────────────────
 
   const handleRegionDrawn = useCallback((videoRect, name) => {
     const tRounded = parseFloat(ts.toFixed(3));
@@ -766,6 +830,7 @@ export default function App() {
 
   const handleRegionMoved = useCallback((name, videoRect) => {
     const tRounded = parseFloat(ts.toFixed(3));
+    const willCreate = !keyframes.some(kf => kf.timestamp === tRounded);
     setKeyframes(kfs => {
       const pos = interpolate(kfs, tRounded);
       pos[name] = videoRect;
@@ -775,7 +840,8 @@ export default function App() {
       return [...kfs, { timestamp: tRounded, regions }]
         .sort((a, b) => a.timestamp - b.timestamp);
     });
-  }, [ts, names]);
+    if (willCreate) showToast(`Keyframe saved at t=${tRounded.toFixed(2)}s`);
+  }, [ts, names, keyframes, showToast]);
 
   const handleRegionDeleted = useCallback((name) => {
     setNames(ns => ns.filter(n => n !== name));
@@ -812,27 +878,37 @@ export default function App() {
         expectations: buildBackendExpectations(expectations),
       },
     });
+    setSavedSnapshot(JSON.stringify({ names, keyframes, expectations }));
   }
 
   async function loadConfig(path) {
     const cfg = await invoke('load_config', { path });
     const kfs = cfg.keyframes || [];
-    setKeyframes(kfs);
     const seen = new Set(); const ns = [];
     kfs.forEach(kf => kf.regions.forEach(r => {
       if (!seen.has(r.name)) { seen.add(r.name); ns.push(r.name); }
     }));
+    const exps = parseBackendExpectations(cfg.expectations);
+    setKeyframes(kfs);
     setNames(ns);
     if (cfg.video_path) setVpath(cfg.video_path);
-    setExpectations(parseBackendExpectations(cfg.expectations));
+    setExpectations(exps);
+    setSavedSnapshot(JSON.stringify({ names: ns, keyframes: kfs, expectations: exps }));
   }
+
+  const tabs = [
+    { id: 'configure', label: 'Configure Regions' },
+    { id: 'extract',   label: 'Extract' },
+  ];
 
   return (
     <div className="flex flex-col h-screen bg-gray-100 font-[system-ui,sans-serif] select-none">
       <div className="flex flex-1 overflow-hidden">
         <Sidebar
-          vpath={vpath} setVpath={setVpath}
-          vinfo={vinfo} onLoadVideo={loadVideo}
+          vpath={vpath}
+          vinfo={vinfo}
+          onLoadVideo={loadVideo}
+          videoError={videoError}
           names={names}
           onRenameRegion={renameRegion}
           onDeleteRegion={handleRegionDeleted}
@@ -844,20 +920,27 @@ export default function App() {
           onDeleteKf={deleteKf}
           onSaveConfig={saveConfig}
           onLoadConfig={loadConfig}
+          isDirty={isDirty}
         />
 
         <main className="flex-1 flex flex-col overflow-hidden">
           {/* Tabs */}
-          <div className="shrink-0 flex border-b border-gray-200 bg-white">
-            {[
-              { id: 'configure', label: '🎬 Configure Regions' },
-              { id: 'extract',   label: '⚙ Extract' },
-            ].map(t => (
+          <div
+            role="tablist"
+            aria-label="Main sections"
+            className="shrink-0 flex border-b border-gray-200 bg-white"
+          >
+            {tabs.map(t => (
               <button
                 key={t.id}
+                role="tab"
+                aria-selected={activeTab === t.id}
+                aria-controls={`tabpanel-${t.id}`}
+                id={`tab-${t.id}`}
                 onClick={() => setActiveTab(t.id)}
                 className={
                   'px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ' +
+                  'focus:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-inset ' +
                   (activeTab === t.id
                     ? 'border-green-500 text-green-700'
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-200')
@@ -870,6 +953,9 @@ export default function App() {
 
           {/* Both tabs stay mounted — display:none preserves state across switches */}
           <div
+            role="tabpanel"
+            id="tabpanel-configure"
+            aria-labelledby="tab-configure"
             className="flex-1 overflow-hidden flex flex-col gap-4 p-4"
             style={{ display: activeTab === 'configure' ? 'flex' : 'none' }}
           >
@@ -890,6 +976,9 @@ export default function App() {
           </div>
 
           <div
+            role="tabpanel"
+            id="tabpanel-extract"
+            aria-labelledby="tab-extract"
             className="flex-1 overflow-auto"
             style={{ display: activeTab === 'extract' ? 'flex' : 'none', flexDirection: 'column' }}
           >
@@ -897,6 +986,17 @@ export default function App() {
           </div>
         </main>
       </div>
+
+      {/* Toast notification */}
+      {toastMsg && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed top-4 right-4 z-50 bg-gray-800 text-white text-sm px-4 py-2 rounded-lg shadow-lg pointer-events-none"
+        >
+          {toastMsg}
+        </div>
+      )}
     </div>
   );
 }

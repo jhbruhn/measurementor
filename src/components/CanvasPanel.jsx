@@ -398,7 +398,7 @@ const CanvasPanel = forwardRef(function CanvasPanel(
       {/* Canvas — fills all available height, maintains video aspect ratio */}
       <div
         ref={containerRef}
-        className="flex-1 min-h-0 flex items-center justify-center overflow-hidden bg-[#1e1e2e]"
+        className="relative flex-1 min-h-0 flex items-center justify-center overflow-hidden bg-[#1e1e2e]"
       >
         <canvas
           ref={cvRef}
@@ -411,6 +411,18 @@ const CanvasPanel = forwardRef(function CanvasPanel(
           onMouseLeave={onMouseUp}
           onContextMenu={e => e.preventDefault()}
         />
+        {/* Onboarding overlay — shown when no video is loaded */}
+        {!vpath && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 pointer-events-none select-none">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#4b5563" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <rect x="2" y="6" width="20" height="14" rx="2" />
+              <path d="M10 9l5 3-5 3V9z" fill="#4b5563" stroke="none" />
+              <path d="M8 3h2M14 3h2" />
+            </svg>
+            <p className="text-gray-400 text-sm font-medium">No video loaded</p>
+            <p className="text-gray-500 text-xs">Select a video in the sidebar to get started</p>
+          </div>
+        )}
       </div>{/* canvas container */}
 
       {/* Zoom bar */}
@@ -436,7 +448,7 @@ function ZoomBtn({ onClick, title, children }) {
   return (
     <button
       onClick={onClick} title={title}
-      className="px-2 py-0.5 rounded bg-gray-100 hover:bg-gray-200 text-xs font-medium text-gray-600 transition-colors border border-gray-200"
+      className="px-2 py-0.5 rounded bg-gray-100 hover:bg-gray-200 text-xs font-medium text-gray-600 transition-colors border border-gray-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-1"
     >
       {children}
     </button>
