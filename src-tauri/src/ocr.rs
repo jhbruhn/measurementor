@@ -85,7 +85,7 @@ pub fn read_region(
                 "[ocr] fast-path via {} (eff={:.3} ≥ {:.3}), skipping fallback",
                 best.engine_name, eff_conf, fast_threshold
             );
-            return make_result(best.clone());
+            return make_result(best.clone(), filter_numeric);
         }
     }
 
@@ -110,7 +110,7 @@ pub fn read_region(
     // return an empty value rather than reporting a known-bad result.
     priority_results.extend(fallback_results);
     match best_result_constrained(&priority_results, filter_numeric, expectation, prev_value) {
-        Some(w) => make_result(w.clone()),
+        Some(w) => make_result(w.clone(), filter_numeric),
         None => {
             // No candidate passed hard constraints — report empty.
             eprintln!("[ocr] hard-filter: no candidate satisfied constraints → empty");
@@ -307,8 +307,12 @@ fn count_total_digits(s: &str) -> u32 {
     s.chars().filter(|c| c.is_ascii_digit()).count() as u32
 }
 
-fn make_result(r: OcrResult) -> (String, f64, String, String, String) {
-    let value = clean_number(&r.text);
+fn make_result(r: OcrResult, filter_numeric: bool) -> (String, f64, String, String, String) {
+    let value = if filter_numeric {
+        clean_number(&r.text)
+    } else {
+        r.text.trim().to_string()
+    };
     (value, r.confidence, r.text.trim().to_string(), r.preview_b64, r.engine_name)
 }
 
