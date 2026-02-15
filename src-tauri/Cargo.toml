@@ -27,6 +27,6 @@ image = { version = "0.25", features = ["jpeg", "png"] }
 imageproc = "0.26"
 oar-ocr = { version = "0.6", default-features = false, features = [] }
 anyhow = "1"
-ffmpeg-the-third = { git = "https://github.com/shssoichiro/ffmpeg-the-third", default-features = false, features = ["build", "codec", "format", "software-scaling"] }
+ffmpeg-the-third = { git = "https://github.com/jhbruhn/ffmpeg-the-third", branch = "build-windows", default-features = false, features = ["build", "codec", "format", "software-scaling"] }
 rayon = "1"
 kreuzberg-tesseract = "4"

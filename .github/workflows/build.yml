@@ -104,27 +104,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # ── MSYS2 / MinGW64 ──────────────────────────────────────────────────────
-      # ffmpeg-sys-the-third `build` feature and kreuzberg-tesseract
-      # `static-linking` both compile C/C++ from source using configure+make /
-      # cmake.  ffmpeg-sys-the-third runs `Command::new(configure_path)` with no
-      # shell wrapper, so bash must be available in the process environment.
-      # Using MSYS2 MINGW64 and the x86_64-pc-windows-gnu Rust target satisfies
-      # both requirements: bash is in PATH and the static .a files produced by
-      # MinGW GCC are ABI-compatible with the GNU linker Rust uses for that target.
+      # ── MSYS2 tools for FFmpeg build ─────────────────────────────────────────
+      # ffmpeg-sys-the-third's `build` feature compiles FFmpeg from source via
+      # configure+make.  The fork at jhbruhn/ffmpeg-the-third (build-windows
+      # branch) wraps the configure invocation with `sh` on Windows so that
+      # CreateProcess can execute it.  MSYS2 provides sh, make, nasm, and gcc.
+      # MSVC Rust target is kept so oar-ocr/ort (MSVC-only on Windows) works.
       - uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
           update: false
-          # inherit: expose the full Windows PATH inside MSYS2 so that tools
-          # installed by earlier steps (npm, cargo, etc.) are visible.
           path-type: inherit
           install: >-
             nasm
             make
             mingw-w64-x86_64-toolchain
-            mingw-w64-x86_64-clang
-            mingw-w64-x86_64-cmake
 
       # ── Rust / Node ──────────────────────────────────────────────────────────
       - uses: actions/setup-node@v4
@@ -134,8 +128,6 @@ jobs:
           cache-dependency-path: package-lock.json
 
       - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-pc-windows-gnu
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -145,19 +137,20 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
-      # ── Build (inside MSYS2 so configure scripts can execute) ────────────────
+      # ── Build ───────────────────────────────────────────────────────────────
       - name: Build Tauri app
         shell: msys2 {0}
-        run: npm run tauri build -- --target x86_64-pc-windows-gnu
+        run: npm run tauri build
         env:
-          # bindgen needs libclang; use the one from MSYS2 mingw64.
-          LIBCLANG_PATH: C:/msys64/mingw64/bin
+          # bindgen (ffmpeg-sys-the-third) needs libclang; use LLVM pre-installed
+          # on windows-latest (visible via inherited PATH).
+          LIBCLANG_PATH: C:/Program Files/LLVM/bin
 
       - name: Upload NSIS installer
         uses: actions/upload-artifact@v4
         with:
           name: Measurementor-windows-installer
-          path: src-tauri/target/x86_64-pc-windows-gnu/release/bundle/nsis/*-setup.exe
+          path: src-tauri/target/release/bundle/nsis/*-setup.exe
           if-no-files-found: error
 
   # ────────────────────────────────────────────────────────────────────────────
