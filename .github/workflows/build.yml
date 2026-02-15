@@ -200,12 +200,86 @@ jobs:
           if-no-files-found: error
 
   # ────────────────────────────────────────────────────────────────────────────
+  # macOS  →  .dmg  (arm64 on macos-latest, x86_64 on macos-13)
+  # ────────────────────────────────────────────────────────────────────────────
+  build-macos:
+    name: Build (macOS ${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-latest
+            vcpkg_triplet: arm64-osx-release
+          - arch: x86_64
+            runner: macos-13
+            vcpkg_triplet: x64-osx-release
+
+    env:
+      VCPKG_ROOT: /usr/local/share/vcpkg
+      VCPKG_DEFAULT_TRIPLET: ${{ matrix.vcpkg_triplet }}
+      # playa-ffmpeg's build.rs uses pkg-config on macOS to locate the
+      # vcpkg-installed FFmpeg headers and static libs.
+      PKG_CONFIG_PATH: /usr/local/share/vcpkg/installed/${{ matrix.vcpkg_triplet }}/lib/pkgconfig
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # pkg-config is not pre-installed on macOS runners; nasm is required by
+      # vcpkg when it compiles FFmpeg from source.
+      - name: Install system dependencies
+        run: brew install pkg-config nasm autoconf automake libtool
+
+      # Cache the vcpkg-installed FFmpeg so subsequent runs skip compilation
+      # (~15 min first run, ~3 min thereafter).
+      - name: Cache vcpkg
+        uses: actions/cache@v4
+        with:
+          path: |
+            /usr/local/share/vcpkg/installed
+            /usr/local/share/vcpkg/downloads
+            /usr/local/share/vcpkg/packages
+            ~/.cache/vcpkg
+          key: vcpkg-macos-${{ matrix.vcpkg_triplet }}-v1
+
+      - name: Install FFmpeg via vcpkg
+        run: vcpkg install ffmpeg[core,avcodec,avformat,swscale]:${{ matrix.vcpkg_triplet }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          cache-on-failure: true
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Build Tauri app
+        run: npm run tauri build
+
+      - name: Upload DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: Measurementor-macos-${{ matrix.arch }}-dmg
+          path: src-tauri/target/release/bundle/dmg/*.dmg
+          if-no-files-found: error
+          compression-level: 0 # DMGs are already compressed
+
+  # ────────────────────────────────────────────────────────────────────────────
   # GitHub Release  (only on version tags, e.g. v0.1.0)
   # ────────────────────────────────────────────────────────────────────────────
   release:
     name: Create GitHub Release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [build-linux, build-windows]
+    needs: [build-linux, build-windows, build-macos]
     runs-on: ubuntu-latest
     permissions:
       contents: write # required to create a release
@@ -227,5 +301,6 @@ jobs:
             artifacts/*.AppImage
             artifacts/*.deb
             artifacts/*-setup.exe
+            artifacts/*.dmg
           generate_release_notes: true
           fail_on_unmatched_files: true
