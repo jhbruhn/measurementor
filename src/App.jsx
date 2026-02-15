@@ -223,13 +223,18 @@ function Sidebar({
                 {/* Expectations panel */}
                 {expanded && (
                   <div className="bg-gray-50/80 border-t border-gray-100 px-2 py-2 flex flex-col gap-2">
-                    <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer select-none">
+                    <label className="flex items-start gap-2 text-xs text-gray-600 cursor-pointer select-none">
                       <input
                         type="checkbox" checked={!!exp.numeric}
                         onChange={e => set('numeric', e.target.checked)}
-                        className="accent-green-600"
+                        className="accent-green-600 mt-0.5 shrink-0"
                       />
-                      Numeric region
+                      <span>
+                        Numeric region
+                        <span className="block text-[10px] text-gray-400 font-normal">
+                          OCR will prefer numeric readings; enables range, digit, and deviation constraints below.
+                        </span>
+                      </span>
                     </label>
 
                     {exp.numeric && (<>
@@ -371,11 +376,11 @@ function confBar(c) {
 }
 
 function ExtractTab({ vpath, vinfo, keyframes, expectations }) {
-  const [fpsSample,   setFpsSample]   = useState(30);
-  const [lang,        setLang]        = useState('en,de');
-  const [preprocess,     setPreprocess]     = useState(true);
-  const [filterNumeric,  setFilterNumeric]  = useState(true);
-  const [oarThreshold,   setOarThreshold]   = useState(90);
+  const [fpsSample,     setFpsSample]     = useState(30);
+  const [lang,          setLang]          = useState('en,de');
+  const [preprocess,    setPreprocess]    = useState(true);
+  const [oarThreshold,  setOarThreshold]  = useState(90);
+  const [showAdvanced,  setShowAdvanced]  = useState(false);
   const [running,     setRunning]     = useState(false);
   const [results,     setResults]     = useState(null);
   const [csvData,     setCsvData]     = useState(null);
@@ -438,7 +443,6 @@ function ExtractTab({ vpath, vinfo, keyframes, expectations }) {
           config: { video_path: vpath, keyframes, expectations: buildBackendExpectations(expectations) },
           fps_sample: fpsSample,
           preprocess,
-          filter_numeric: filterNumeric,
           languages: lang.split(',').map(s => s.trim()).filter(Boolean),
           oar_confidence_threshold: oarThreshold / 100,
         },
@@ -488,31 +492,45 @@ function ExtractTab({ vpath, vinfo, keyframes, expectations }) {
               <Label>Sample every N frames</Label>
               <Input type="number" value={fpsSample} min={1} max={300}
                 onChange={e => setFpsSample(parseInt(e.target.value) || 30)} />
+              {vinfo && (
+                <span className="text-[10px] text-gray-400 mt-0.5 block">
+                  {(fpsSample / vinfo.fps).toFixed(3)} s resolution
+                  · {vinfo.fps.toFixed(1)} fps ÷ {fpsSample}
+                </span>
+              )}
             </div>
             <div>
               <Label>Languages (comma-separated)</Label>
               <Input type="text" value={lang} onChange={e => setLang(e.target.value)} />
             </div>
           </div>
-          <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-3 justify-center">
             <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
               <input type="checkbox" checked={preprocess} onChange={e => setPreprocess(e.target.checked)}
                 className="accent-green-600" />
               Preprocess frames before OCR
             </label>
-            <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
-              <input type="checkbox" checked={filterNumeric} onChange={e => setFilterNumeric(e.target.checked)}
-                className="accent-green-600" />
-              Prefer numeric result over higher confidence
-            </label>
-            <div>
-              <Label>oar-ocr fast-path threshold (%)</Label>
-              <Input type="number" value={oarThreshold} min={0} max={100}
-                onChange={e => setOarThreshold(parseInt(e.target.value) || 90)}
-                title="If oar-ocr confidence ≥ this value, Tesseract is skipped" />
-            </div>
           </div>
         </div>
+
+        {/* Advanced */}
+        <button
+          className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 mt-1 select-none"
+          onClick={() => setShowAdvanced(v => !v)}
+        >
+          {showAdvanced ? '▼' : '▶'} Advanced
+        </button>
+        {showAdvanced && (
+          <div className="mt-2">
+            <Label>Fast-path confidence threshold (%)</Label>
+            <Input type="number" value={oarThreshold} min={0} max={100}
+              onChange={e => setOarThreshold(parseInt(e.target.value) || 90)}
+              title="If the primary OCR engine's confidence reaches this value, the secondary engine is skipped" />
+            <span className="text-[10px] text-gray-400 mt-0.5 block">
+              Primary OCR result is used directly when confidence ≥ this value; lower values force more cross-checking.
+            </span>
+          </div>
+        )}
 
         {nRegions > 0 && nFrames > 0 && (
           <span className="text-xs text-gray-400 mt-1">

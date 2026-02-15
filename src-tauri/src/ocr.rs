@@ -51,11 +51,13 @@ pub fn read_region(
     h: u32,
     priority: &[Box<dyn Recognizer>],
     fallback: &[Box<dyn Recognizer>],
-    filter_numeric: bool,
     fast_threshold: f64,
     expectation: Option<&RegionExpectation>,
     prev_value: Option<f64>,
 ) -> (String, f64, String, String, String) {
+    // Prefer numeric results when the region is marked as numeric.
+    let filter_numeric = expectation.map_or(false, |e| e.numeric);
+
     let x2 = (x + w).min(frame_width);
     let y2 = (y + h).min(frame_height);
     if x2 <= x || y2 <= y {

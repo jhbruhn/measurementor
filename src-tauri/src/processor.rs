@@ -36,7 +36,6 @@ pub struct ExtractParams {
     pub config: RegionConfig,
     pub fps_sample: u32,
     pub preprocess: bool,
-    pub filter_numeric: bool,
     pub languages: Vec<String>,
     /// Confidence threshold (0.0–1.0): if the best oar-ocr result is at or
     /// above this value the Tesseract engines are skipped.  Defaults to 0.9.
@@ -295,7 +294,6 @@ pub async fn extract(
                     region.height.max(0) as u32,
                     &priority_engines,
                     &fallback_engines,
-                    params.filter_numeric,
                     oar_threshold,
                     expectation,
                     prev_value,
