@@ -61,7 +61,13 @@ pub fn read_region(
     let x2 = (x + w).min(frame_width);
     let y2 = (y + h).min(frame_height);
     if x2 <= x || y2 <= y {
-        return (String::new(), 0.0, String::new(), String::new(), String::new());
+        return (
+            String::new(),
+            0.0,
+            String::new(),
+            String::new(),
+            String::new(),
+        );
     }
 
     let crop = build_crop(frame_bytes, frame_width, frame_height, x, y, x2 - x, y2 - y);
@@ -76,8 +82,12 @@ pub fn read_region(
     // Fast-path: skip fallback only when the best priority result is confident
     // enough AND satisfies hard constraints.  An out-of-range result must not
     // short-circuit the fallback engines — one of them might produce a valid value.
-    if let Some(best) = best_result_constrained(&priority_results, filter_numeric, expectation, prev_value) {
-        let v_score  = expectation.map(|e| validation_score(&best.text, e, prev_value)).unwrap_or(1.0);
+    if let Some(best) =
+        best_result_constrained(&priority_results, filter_numeric, expectation, prev_value)
+    {
+        let v_score = expectation
+            .map(|e| validation_score(&best.text, e, prev_value))
+            .unwrap_or(1.0);
         let eff_conf = best.confidence * v_score;
         let numeric_ok = !filter_numeric || clean_number(&best.text).parse::<f64>().is_ok();
         if eff_conf >= fast_threshold && numeric_ok {
@@ -97,7 +107,9 @@ pub fn read_region(
 
     // Debug log all candidates
     for r in priority_results.iter().chain(fallback_results.iter()) {
-        let vscore = expectation.map(|e| validation_score(&r.text, e, prev_value)).unwrap_or(1.0);
+        let vscore = expectation
+            .map(|e| validation_score(&r.text, e, prev_value))
+            .unwrap_or(1.0);
         eprintln!(
             "[ocr]  {:25}  {:?}  conf={:.3}  valid={:.3}",
             r.engine_name, r.text, r.confidence, vscore
@@ -114,7 +126,13 @@ pub fn read_region(
         None => {
             // No candidate passed hard constraints — report empty.
             eprintln!("[ocr] hard-filter: no candidate satisfied constraints → empty");
-            (String::new(), 0.0, String::new(), String::new(), String::new())
+            (
+                String::new(),
+                0.0,
+                String::new(),
+                String::new(),
+                String::new(),
+            )
         }
     }
 }
@@ -132,11 +150,7 @@ fn build_crop(frame_bytes: &[u8], fw: u32, fh: u32, x: u32, y: u32, w: u32, h: u
 /// Returns `true` when `text` satisfies the hard constraints in `exp`
 /// (min/max range, max_deviation from prev_value).
 /// Non-numeric results always fail when `exp.numeric` is set.
-fn passes_hard_constraints(
-    text: &str,
-    exp: &RegionExpectation,
-    prev_value: Option<f64>,
-) -> bool {
+fn passes_hard_constraints(text: &str, exp: &RegionExpectation, prev_value: Option<f64>) -> bool {
     if !exp.numeric {
         return true; // no numeric constraint → anything passes
     }
@@ -192,15 +206,27 @@ fn best_result_constrained<'a>(
             .copied()
             .filter(|&i| clean_number(&results[i].text).parse::<f64>().is_ok())
             .collect();
-        let pool = if numeric_indices.is_empty() { &valid_indices } else { &numeric_indices };
+        let pool = if numeric_indices.is_empty() {
+            &valid_indices
+        } else {
+            &numeric_indices
+        };
         *pool
             .iter()
-            .max_by(|&&a, &&b| score(&results[a]).partial_cmp(&score(&results[b])).unwrap_or(std::cmp::Ordering::Equal))
+            .max_by(|&&a, &&b| {
+                score(&results[a])
+                    .partial_cmp(&score(&results[b]))
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
             .unwrap_or(&valid_indices[0])
     } else {
         *valid_indices
             .iter()
-            .max_by(|&&a, &&b| score(&results[a]).partial_cmp(&score(&results[b])).unwrap_or(std::cmp::Ordering::Equal))
+            .max_by(|&&a, &&b| {
+                score(&results[a])
+                    .partial_cmp(&score(&results[b]))
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
             .unwrap_or(&valid_indices[0])
     };
 
@@ -223,7 +249,9 @@ fn best_result<'a>(
     }
 
     let score = |r: &OcrResult| -> f64 {
-        let v = expectation.map(|e| validation_score(&r.text, e, prev_value)).unwrap_or(1.0);
+        let v = expectation
+            .map(|e| validation_score(&r.text, e, prev_value))
+            .unwrap_or(1.0);
         r.confidence * v
     };
 
@@ -233,14 +261,18 @@ fn best_result<'a>(
             .filter(|r| clean_number(&r.text).parse::<f64>().is_ok())
             .collect();
         if !numeric.is_empty() {
-            return numeric
-                .into_iter()
-                .max_by(|a, b| score(a).partial_cmp(&score(b)).unwrap_or(std::cmp::Ordering::Equal));
+            return numeric.into_iter().max_by(|a, b| {
+                score(a)
+                    .partial_cmp(&score(b))
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
         }
     }
-    results
-        .iter()
-        .max_by(|a, b| score(a).partial_cmp(&score(b)).unwrap_or(std::cmp::Ordering::Equal))
+    results.iter().max_by(|a, b| {
+        score(a)
+            .partial_cmp(&score(b))
+            .unwrap_or(std::cmp::Ordering::Equal)
+    })
 }
 
 // ── Validation scoring ────────────────────────────────────────────────────────
@@ -299,7 +331,9 @@ fn validation_score(text: &str, exp: &RegionExpectation, prev_value: Option<f64>
 
 /// Number of digits after the decimal point in a numeric string ("3.14" → 2, "42" → 0).
 fn count_decimal_places(s: &str) -> u32 {
-    s.find('.').map(|pos| (s.len() - pos - 1) as u32).unwrap_or(0)
+    s.find('.')
+        .map(|pos| (s.len() - pos - 1) as u32)
+        .unwrap_or(0)
 }
 
 /// Total count of ASCII digit characters in a string ("3.14" → 3, "-007" → 3).
@@ -313,7 +347,13 @@ fn make_result(r: OcrResult, filter_numeric: bool) -> (String, f64, String, Stri
     } else {
         r.text.trim().to_string()
     };
-    (value, r.confidence, r.text.trim().to_string(), r.preview_b64, r.engine_name)
+    (
+        value,
+        r.confidence,
+        r.text.trim().to_string(),
+        r.preview_b64,
+        r.engine_name,
+    )
 }
 
 /// Normalise raw OCR output to a clean number string.

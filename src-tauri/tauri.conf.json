@@ -25,6 +25,7 @@
     }
   },
   "bundle": {
+    "createUpdaterArtifacts": true,
     "active": true,
     "targets": "all",
     "icon": [
@@ -43,5 +44,12 @@
       "minimumSystemVersion": "14.0"
     }
   },
-  "plugins": {}
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IERBRjJGNzVCMkQzRUVDQzAKUldUQTdENHRXL2Z5MnBIc1NxdUIwVExabEh2Y2QrVHhTd1cvb1FJbFdjaXZlY3U0N2hpcDVNcXQK",
+      "endpoints": [
+        "https://github.com/jhbruhn/measurementor/releases/latest/download/latest.json"
+      ]
+    }
+  }
 }

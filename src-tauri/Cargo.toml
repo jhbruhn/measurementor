@@ -30,3 +30,6 @@ anyhow = "1"
 playa-ffmpeg = { version = "8.0.3", default-features = false, features = ["codec", "format", "software-scaling"] }
 rayon = "1"
 kreuzberg-tesseract = "4"
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-updater = "2"

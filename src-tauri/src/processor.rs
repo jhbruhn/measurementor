@@ -1,5 +1,4 @@
 use crate::config::RegionConfig;
-use std::collections::HashMap;
 use crate::ocr::{
     oar::{build_pipeline, ColorMode, OarRecognizer},
     read_region,
@@ -8,6 +7,7 @@ use crate::ocr::{
 };
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
@@ -28,7 +28,9 @@ pub fn cancel_extract(cancel: tauri::State<'_, CancelFlag>) {
     cancel.0.store(true, Ordering::Relaxed);
 }
 
-fn default_oar_threshold() -> f64 { 0.9 }
+fn default_oar_threshold() -> f64 {
+    0.9
+}
 
 #[derive(Debug, Deserialize)]
 pub struct ExtractParams {
@@ -92,17 +94,22 @@ pub async fn extract(
         return Err("At least 2 keyframes are required to run extraction.".to_string());
     }
 
-    let mut kf_ts: Vec<f64> = params.config.keyframes.iter().map(|kf| kf.timestamp).collect();
+    let mut kf_ts: Vec<f64> = params
+        .config
+        .keyframes
+        .iter()
+        .map(|kf| kf.timestamp)
+        .collect();
     kf_ts.sort_by(|a, b| a.partial_cmp(b).unwrap());
     let first_ts = kf_ts[0];
-    let last_ts  = *kf_ts.last().unwrap();
+    let last_ts = *kf_ts.last().unwrap();
 
     let info = get_video_info(params.video_path.clone())?;
-    let fps        = info.fps;
+    let fps = info.fps;
     let fps_sample = params.fps_sample.max(1) as u64;
 
     let first_frame = (first_ts * fps).round() as u64;
-    let last_frame  = (last_ts  * fps).round() as u64;
+    let last_frame = (last_ts * fps).round() as u64;
     let total_steps = (last_frame.saturating_sub(first_frame)) / fps_sample + 1;
 
     // ── Build OCR engine lists ────────────────────────────────────────────────
@@ -135,16 +142,21 @@ pub async fn extract(
         });
 
         if let Some(dir) = found {
-            let rec  = dir.join("pp-ocrv5_mobile_rec.onnx");
+            let rec = dir.join("pp-ocrv5_mobile_rec.onnx");
             let dict = dir.join("ppocrv5_dict.txt");
             match build_pipeline(rec.to_str().unwrap_or(""), dict.to_str().unwrap_or("")) {
                 Ok(pipeline) => {
                     eprintln!("oar-ocr pipeline ready (models: {dir:?})");
                     let pipeline = Arc::new(pipeline);
                     vec![
-                        Box::new(OarRecognizer { pipeline: pipeline.clone(), color_mode: ColorMode::Rgb })
-                            as Box<dyn Recognizer>,
-                        Box::new(OarRecognizer { pipeline, color_mode: ColorMode::Grayscale }),
+                        Box::new(OarRecognizer {
+                            pipeline: pipeline.clone(),
+                            color_mode: ColorMode::Rgb,
+                        }) as Box<dyn Recognizer>,
+                        Box::new(OarRecognizer {
+                            pipeline,
+                            color_mode: ColorMode::Grayscale,
+                        }),
                     ]
                 }
                 Err(e) => {
@@ -167,9 +179,7 @@ pub async fn extract(
         use tauri::Manager as _;
         let candidates = [
             std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")),
-            app.path()
-                .resource_dir()
-                .unwrap_or_default(),
+            app.path().resource_dir().unwrap_or_default(),
         ];
         candidates
             .iter()
@@ -256,7 +266,7 @@ pub async fn extract(
         }
 
         let timestamp = frame_num as f64 / fps;
-        let regions   = params.config.get_regions_at(timestamp);
+        let regions = params.config.get_regions_at(timestamp);
 
         if regions.is_empty() {
             elapsed += 1;
@@ -264,15 +274,16 @@ pub async fn extract(
             continue;
         }
 
-        let (frame_bytes, fw, fh) = match crate::video::decode_frame_at(&params.video_path, timestamp) {
-            Ok(t) => t,
-            Err(e) => {
-                eprintln!("frame decode failed at {timestamp:.3}s: {e}");
-                elapsed += 1;
-                frame_num += fps_sample;
-                continue;
-            }
-        };
+        let (frame_bytes, fw, fh) =
+            match crate::video::decode_frame_at(&params.video_path, timestamp) {
+                Ok(t) => t,
+                Err(e) => {
+                    eprintln!("frame decode failed at {timestamp:.3}s: {e}");
+                    elapsed += 1;
+                    frame_num += fps_sample;
+                    continue;
+                }
+            };
 
         // Snapshot previous values before parallel processing so all regions in this
         // frame read the *previous* frame's accepted values (not each other's).
@@ -283,7 +294,7 @@ pub async fn extract(
             .par_iter()
             .map(|region| {
                 let expectation = params.config.expectations.get(&region.name);
-                let prev_value  = prev_snap.get(&region.name).copied();
+                let prev_value = prev_snap.get(&region.name).copied();
                 let (value, confidence, raw_text, ocr_preview, source) = read_region(
                     &frame_bytes,
                     fw,
@@ -345,12 +356,12 @@ pub async fn extract(
 
     // ── Build CSV string (not written to disk — user exports explicitly) ──────
 
-    let mut csv = String::from("timestamp,frame_number,region_name,value,confidence,raw_text,source\n");
+    let mut csv =
+        String::from("timestamp,frame_number,region_name,value,confidence,raw_text,source\n");
     for m in &measurements {
         csv.push_str(&format!(
             "{},{},{},{},{:.4},{},{}\n",
-            m.timestamp, m.frame_number, m.region_name,
-            m.value, m.confidence, m.raw_text, m.source,
+            m.timestamp, m.frame_number, m.region_name, m.value, m.confidence, m.raw_text, m.source,
         ));
     }
 
@@ -361,8 +372,7 @@ pub async fn extract(
 #[tauri::command]
 pub fn save_csv(path: String, csv: String) -> Result<(), String> {
     if let Some(parent) = std::path::Path::new(&path).parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| format!("Cannot create directories: {e}"))?;
+        std::fs::create_dir_all(parent).map_err(|e| format!("Cannot create directories: {e}"))?;
     }
     std::fs::write(&path, csv).map_err(|e| format!("Cannot write {path}: {e}"))
 }

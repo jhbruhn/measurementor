@@ -1,4 +1,5 @@
 use base64::Engine;
+use image::{codecs::png::PngEncoder, ImageEncoder};
 use playa_ffmpeg as ffmpeg;
 use playa_ffmpeg::{
     codec::context::Context as CodecCtx,
@@ -7,7 +8,6 @@ use playa_ffmpeg::{
     media::Type,
     software::scaling::{context::Context as SwsCtx, flag::Flags},
 };
-use image::{codecs::png::PngEncoder, ImageEncoder};
 use serde::Serialize;
 
 #[derive(Serialize)]
@@ -23,8 +23,7 @@ pub struct VideoInfo {
 pub fn get_video_info(path: String) -> Result<VideoInfo, String> {
     ffmpeg::init().map_err(|e| e.to_string())?;
 
-    let ictx = ffmpeg::format::input(&path)
-        .map_err(|e| format!("cannot open '{path}': {e}"))?;
+    let ictx = ffmpeg::format::input(&path).map_err(|e| format!("cannot open '{path}': {e}"))?;
 
     let stream = ictx
         .streams()
@@ -62,7 +61,13 @@ pub fn get_video_info(path: String) -> Result<VideoInfo, String> {
         (duration * fps).round() as u64
     };
 
-    Ok(VideoInfo { fps, width, height, total_frames, duration })
+    Ok(VideoInfo {
+        fps,
+        width,
+        height,
+        total_frames,
+        duration,
+    })
 }
 
 /// Decode the frame nearest to `timestamp` seconds and return
@@ -71,8 +76,7 @@ pub fn get_video_info(path: String) -> Result<VideoInfo, String> {
 pub fn decode_frame_at(path: &str, timestamp: f64) -> Result<(Vec<u8>, u32, u32), String> {
     ffmpeg::init().map_err(|e| e.to_string())?;
 
-    let mut ictx = ffmpeg::format::input(&path)
-        .map_err(|e| format!("open '{path}': {e}"))?;
+    let mut ictx = ffmpeg::format::input(&path).map_err(|e| format!("open '{path}': {e}"))?;
 
     // Collect stream index + build decoder inside a block so that the
     // shared borrow of `ictx` (held by `stream`) is released before we
@@ -142,16 +146,19 @@ pub fn decode_frame_at(path: &str, timestamp: f64) -> Result<(Vec<u8>, u32, u32)
     }
 
     // Copy RGB data, stripping per-row padding if the stride > row width.
-    let stride    = rgb_frame.stride(0);
+    let stride = rgb_frame.stride(0);
     let row_bytes = width as usize * 3;
-    let data      = rgb_frame.data(0);
+    let data = rgb_frame.data(0);
 
     let rgb = if stride == row_bytes {
         let expected = row_bytes * height as usize;
         if data.len() < expected {
             return Err(format!(
                 "frame buffer too small: {} bytes < {} expected ({}×{}×3)",
-                data.len(), expected, width, height
+                data.len(),
+                expected,
+                width,
+                height
             ));
         }
         data[..expected].to_vec()
@@ -159,7 +166,7 @@ pub fn decode_frame_at(path: &str, timestamp: f64) -> Result<(Vec<u8>, u32, u32)
         let mut flat = Vec::with_capacity(row_bytes * height as usize);
         for row in 0..height as usize {
             let start = row * stride;
-            let end   = start + row_bytes;
+            let end = start + row_bytes;
             if end > data.len() {
                 return Err(format!(
                     "frame row {row} out of bounds (stride={stride}, data.len()={})",

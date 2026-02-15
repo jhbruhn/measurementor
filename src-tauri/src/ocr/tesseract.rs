@@ -3,12 +3,10 @@ use image::{
     codecs::png::PngEncoder, DynamicImage, GenericImageView, GrayImage, ImageEncoder, Luma,
 };
 use imageproc::{
-    distance_transform::Norm,
-    filter::gaussian_blur_f32,
-    morphology::open as morph_open,
+    distance_transform::Norm, filter::gaussian_blur_f32, morphology::open as morph_open,
 };
-use rayon::prelude::*;
 use kreuzberg_tesseract::TesseractAPI;
+use rayon::prelude::*;
 
 use super::{OcrResult, Recognizer};
 
@@ -74,10 +72,10 @@ pub struct TesseractRecognizer {
 impl Recognizer for TesseractRecognizer {
     fn name(&self) -> &str {
         match self.preprocess {
-            Preprocess::Binary   => "tesseract/binary",
-            Preprocess::Gray     => "tesseract/gray",
-            Preprocess::RawGray  => "tesseract/raw-gray",
-            Preprocess::RawRgb   => "tesseract/rgb",
+            Preprocess::Binary => "tesseract/binary",
+            Preprocess::Gray => "tesseract/gray",
+            Preprocess::RawGray => "tesseract/raw-gray",
+            Preprocess::RawRgb => "tesseract/rgb",
             Preprocess::ChannelR => "tesseract/channel-r",
             Preprocess::ChannelG => "tesseract/channel-g",
             Preprocess::ChannelB => "tesseract/channel-b",
@@ -90,11 +88,27 @@ impl Recognizer for TesseractRecognizer {
         match self.preprocess {
             Preprocess::RawRgb => {
                 let img = crop.to_rgb8();
-                run_ocr_bytes(img.as_raw(), img.width(), img.height(), 3, &lang, datadir, self.name())
+                run_ocr_bytes(
+                    img.as_raw(),
+                    img.width(),
+                    img.height(),
+                    3,
+                    &lang,
+                    datadir,
+                    self.name(),
+                )
             }
             _ => {
                 let img = self.prepare_gray(crop);
-                run_ocr_bytes(img.as_raw(), img.width(), img.height(), 1, &lang, datadir, self.name())
+                run_ocr_bytes(
+                    img.as_raw(),
+                    img.width(),
+                    img.height(),
+                    1,
+                    &lang,
+                    datadir,
+                    self.name(),
+                )
             }
         }
     }
@@ -104,8 +118,8 @@ impl TesseractRecognizer {
     fn prepare_gray(&self, crop: &DynamicImage) -> GrayImage {
         match self.preprocess {
             Preprocess::RawGray => crop.to_luma8(),
-            Preprocess::RawRgb  => unreachable!(),
-            _                   => preprocess_pipeline(crop, &self.preprocess),
+            Preprocess::RawRgb => unreachable!(),
+            _ => preprocess_pipeline(crop, &self.preprocess),
         }
     }
 }
@@ -138,7 +152,7 @@ fn preprocess_pipeline(img: &DynamicImage, mode: &Preprocess) -> GrayImage {
         Preprocess::ChannelR => extract_channel(&scaled, 0),
         Preprocess::ChannelG => extract_channel(&scaled, 1),
         Preprocess::ChannelB => extract_channel(&scaled, 2),
-        _                    => scaled.to_luma8(),
+        _ => scaled.to_luma8(),
     };
 
     // Step 2 — Auto-invert: ensure text is dark on bright background (Tesseract & Sauvola expect this)
@@ -212,9 +226,9 @@ fn extract_channel(img: &DynamicImage, channel: usize) -> GrayImage {
 //   5. Apply per-pixel mapping via bilinear interpolation between the four nearest tile centres.
 
 fn clahe(img: &GrayImage, tile_size: u32, clip_limit_factor: f32) -> GrayImage {
-    let width  = img.width();
+    let width = img.width();
     let height = img.height();
-    let tiles_x = (width  + tile_size - 1) / tile_size;
+    let tiles_x = (width + tile_size - 1) / tile_size;
     let tiles_y = (height + tile_size - 1) / tile_size;
 
     // Pre-compute tone mapping for every tile
@@ -241,7 +255,8 @@ fn clahe(img: &GrayImage, tile_size: u32, clip_limit_factor: f32) -> GrayImage {
 /// Build the input → output tone mapping [0..255] for one CLAHE tile.
 fn tile_mapping(
     img: &GrayImage,
-    tx: u32, ty: u32,
+    tx: u32,
+    ty: u32,
     tile_size: u32,
     clip_limit_factor: f32,
 ) -> [u8; 256] {
@@ -270,7 +285,7 @@ fn tile_mapping(
             *h = clip;
         }
     }
-    let per_bin  = excess / 256;
+    let per_bin = excess / 256;
     let leftover = (excess % 256) as usize;
     for (i, h) in hist.iter_mut().enumerate() {
         *h += per_bin + if i < leftover { 1 } else { 0 };
@@ -290,12 +305,13 @@ fn tile_mapping(
 fn bilinear_clahe(
     maps: &[Vec<[u8; 256]>],
     pixel: u8,
-    x: u32, y: u32,
+    x: u32,
+    y: u32,
     tile_size: u32,
     tiles_x: u32,
     tiles_y: u32,
 ) -> u8 {
-    let ts   = tile_size as f32;
+    let ts = tile_size as f32;
     let half = ts / 2.0;
 
     // Fractional tile coordinates: 0.0 = centre of tile 0, 1.0 = centre of tile 1, …
@@ -329,23 +345,23 @@ fn bilinear_clahe(
 // that a global threshold would miss (gradients, glare, uneven display backlighting).
 
 fn sauvola_threshold(gray: &GrayImage) -> GrayImage {
-    let w = gray.width()  as usize;
+    let w = gray.width() as usize;
     let h = gray.height() as usize;
     let half = (SAUVOLA_WINDOW / 2) as usize;
     let stride = w + 1;
 
     // Integral images: row-major, (h+1) × (w+1), zero-padded top and left border
-    let mut isum   = vec![0i64; stride * (h + 1)];
+    let mut isum = vec![0i64; stride * (h + 1)];
     let mut isumsq = vec![0i64; stride * (h + 1)];
 
     for y in 0..h {
         for x in 0..w {
             let v = gray.get_pixel(x as u32, y as u32)[0] as i64;
-            let idx     = (y + 1) * stride + (x + 1);
-            let above   = y * stride + (x + 1);
-            let left    = (y + 1) * stride + x;
-            let diag    = y * stride + x;
-            isum  [idx] = v     + isum  [above] + isum  [left] - isum  [diag];
+            let idx = (y + 1) * stride + (x + 1);
+            let above = y * stride + (x + 1);
+            let left = (y + 1) * stride + x;
+            let diag = y * stride + x;
+            isum[idx] = v + isum[above] + isum[left] - isum[diag];
             isumsq[idx] = v * v + isumsq[above] + isumsq[left] - isumsq[diag];
         }
     }
@@ -359,20 +375,24 @@ fn sauvola_threshold(gray: &GrayImage) -> GrayImage {
             let y1 = (y + half + 1).min(h);
             let count = ((x1 - x0) * (y1 - y0)) as i64;
 
-            let br    = y1 * stride + x1;
-            let bl    = y1 * stride + x0;
-            let tr    = y0 * stride + x1;
-            let tl    = y0 * stride + x0;
-            let sum   = isum  [br] - isum  [bl] - isum  [tr] + isum  [tl];
+            let br = y1 * stride + x1;
+            let bl = y1 * stride + x0;
+            let tr = y0 * stride + x1;
+            let tl = y0 * stride + x0;
+            let sum = isum[br] - isum[bl] - isum[tr] + isum[tl];
             let sumsq = isumsq[br] - isumsq[bl] - isumsq[tr] + isumsq[tl];
 
             let mean = sum as f64 / count as f64;
-            let var  = (sumsq as f64 / count as f64) - mean * mean;
-            let std  = var.max(0.0).sqrt();
+            let var = (sumsq as f64 / count as f64) - mean * mean;
+            let std = var.max(0.0).sqrt();
 
             let threshold = mean * (1.0 + SAUVOLA_K * (std / SAUVOLA_R - 1.0));
-            let pv        = gray.get_pixel(x as u32, y as u32)[0] as f64;
-            out.put_pixel(x as u32, y as u32, Luma([if pv >= threshold { 255 } else { 0 }]));
+            let pv = gray.get_pixel(x as u32, y as u32)[0] as f64;
+            out.put_pixel(
+                x as u32,
+                y as u32,
+                Luma([if pv >= threshold { 255 } else { 0 }]),
+            );
         }
     }
     out
@@ -404,7 +424,12 @@ fn run_ocr_bytes(
     };
     let preview_b64 = encode_png(bytes, w, h, color);
 
-    Some(OcrResult { text, confidence, preview_b64, engine_name: engine_name.to_string() })
+    Some(OcrResult {
+        text,
+        confidence,
+        preview_b64,
+        engine_name: engine_name.to_string(),
+    })
 }
 
 /// Call Tesseract for one PSM. `bpp` = 1 for grayscale, 3 for RGB.
@@ -420,10 +445,12 @@ fn try_ocr(
 ) -> Result<(String, f64), ()> {
     let api = TesseractAPI::new();
     api.init(datadir.unwrap_or(""), lang).map_err(|_| ())?;
-    api.set_variable("tessedit_pageseg_mode", &psm.to_string()).map_err(|_| ())?;
-    api.set_image(bytes, w as i32, h as i32, bpp, w as i32 * bpp).map_err(|_| ())?;
+    api.set_variable("tessedit_pageseg_mode", &psm.to_string())
+        .map_err(|_| ())?;
+    api.set_image(bytes, w as i32, h as i32, bpp, w as i32 * bpp)
+        .map_err(|_| ())?;
 
-    let raw     = api.get_utf8_text().map_err(|_| ())?;
+    let raw = api.get_utf8_text().map_err(|_| ())?;
     let trimmed = raw.trim().to_string();
     if trimmed.is_empty() {
         return Err(());
@@ -437,7 +464,10 @@ fn try_ocr(
 
 fn encode_png(bytes: &[u8], w: u32, h: u32, color: image::ExtendedColorType) -> String {
     let mut png = Vec::new();
-    if PngEncoder::new(&mut png).write_image(bytes, w, h, color).is_ok() {
+    if PngEncoder::new(&mut png)
+        .write_image(bytes, w, h, color)
+        .is_ok()
+    {
         base64::engine::general_purpose::STANDARD.encode(&png)
     } else {
         String::new()
@@ -455,7 +485,7 @@ fn build_lang(languages: &[String]) -> String {
             "de" | "deu" => "deu",
             "fr" | "fra" => "fra",
             "es" | "spa" => "spa",
-            other        => other,
+            other => other,
         })
         .collect::<Vec<_>>()
         .join("+")

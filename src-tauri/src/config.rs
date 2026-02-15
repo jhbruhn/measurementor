@@ -101,10 +101,14 @@ fn interpolate_keyframes(a: &Keyframe, b: &Keyframe, t: f64) -> Vec<Region> {
     let a_map: HashMap<&str, &Region> = a.regions.iter().map(|r| (r.name.as_str(), r)).collect();
     let b_map: HashMap<&str, &Region> = b.regions.iter().map(|r| (r.name.as_str(), r)).collect();
 
-    let mut result: Vec<Region> = a.regions.iter().map(|ra| {
-        let rb = b_map.get(ra.name.as_str()).copied().unwrap_or(ra);
-        lerp_region(ra, rb, t)
-    }).collect();
+    let mut result: Vec<Region> = a
+        .regions
+        .iter()
+        .map(|ra| {
+            let rb = b_map.get(ra.name.as_str()).copied().unwrap_or(ra);
+            lerp_region(ra, rb, t)
+        })
+        .collect();
 
     // Include regions that only exist in `b` (added at this keyframe)
     for rb in &b.regions {
@@ -118,10 +122,10 @@ fn interpolate_keyframes(a: &Keyframe, b: &Keyframe, t: f64) -> Vec<Region> {
 
 fn lerp_region(a: &Region, b: &Region, t: f64) -> Region {
     Region {
-        name:   a.name.clone(),
-        x:      lerp_i32(a.x,      b.x,      t),
-        y:      lerp_i32(a.y,      b.y,      t),
-        width:  lerp_i32(a.width,  b.width,  t),
+        name: a.name.clone(),
+        x: lerp_i32(a.x, b.x, t),
+        y: lerp_i32(a.y, b.y, t),
+        width: lerp_i32(a.width, b.width, t),
         height: lerp_i32(a.height, b.height, t),
     }
 }

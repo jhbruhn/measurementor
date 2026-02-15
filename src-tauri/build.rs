@@ -12,8 +12,7 @@ fn main() {
 
 // ── Model download ────────────────────────────────────────────────────────────
 
-const MODEL_BASE: &str =
-    "https://github.com/GreatV/oar-ocr/releases/download/v0.3.0";
+const MODEL_BASE: &str = "https://github.com/GreatV/oar-ocr/releases/download/v0.3.0";
 
 const MODELS: &[&str] = &[
     "pp-ocrv5_mobile_det.onnx",
@@ -45,8 +44,7 @@ fn download_models() {
             .call()
             .unwrap_or_else(|e| panic!("failed to download {filename}: {e}"));
 
-        let mut file =
-            std::fs::File::create(&dest).expect("could not create model file");
+        let mut file = std::fs::File::create(&dest).expect("could not create model file");
 
         std::io::copy(&mut resp.into_reader(), &mut file)
             .unwrap_or_else(|e| panic!("failed to write {filename}: {e}"));
@@ -62,8 +60,7 @@ fn download_models() {
 // resources so the app can find tessdata at runtime without requiring a
 // system Tesseract installation.
 
-const TESSDATA_BASE: &str =
-    "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/main";
+const TESSDATA_BASE: &str = "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/main";
 
 /// Languages supported by `build_lang()` in ocr/tesseract.rs.
 const TESSDATA_LANGS: &[&str] = &["eng", "deu", "fra", "spa"];
@@ -90,8 +87,7 @@ fn download_tessdata() {
             .call()
             .unwrap_or_else(|e| panic!("failed to download {filename}: {e}"));
 
-        let mut file =
-            std::fs::File::create(&dest).expect("could not create tessdata file");
+        let mut file = std::fs::File::create(&dest).expect("could not create tessdata file");
 
         std::io::copy(&mut resp.into_reader(), &mut file)
             .unwrap_or_else(|e| panic!("failed to write {filename}: {e}"));
@@ -99,4 +95,3 @@ fn download_tessdata() {
         println!("cargo:warning=tessdata: {filename} ready");
     }
 }
-

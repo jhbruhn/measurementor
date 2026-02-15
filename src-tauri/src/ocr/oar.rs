@@ -47,7 +47,7 @@ pub struct OarRecognizer {
 impl Recognizer for OarRecognizer {
     fn name(&self) -> &str {
         match self.color_mode {
-            ColorMode::Rgb       => "oar-ocr/rgb",
+            ColorMode::Rgb => "oar-ocr/rgb",
             ColorMode::Grayscale => "oar-ocr/gray",
         }
     }
@@ -55,7 +55,7 @@ impl Recognizer for OarRecognizer {
     fn recognize(&self, crop: &DynamicImage) -> Option<OcrResult> {
         // Prepare the image in the requested colour space
         let img = match self.color_mode {
-            ColorMode::Rgb       => crop.to_rgb8(),
+            ColorMode::Rgb => crop.to_rgb8(),
             ColorMode::Grayscale => DynamicImage::ImageLuma8(crop.to_luma8()).to_rgb8(),
         };
 
@@ -73,14 +73,23 @@ impl Recognizer for OarRecognizer {
 
         eprintln!(
             "[oar] {} {}×{} (orig {}×{})",
-            self.name(), img.width(), img.height(), orig_w, orig_h
+            self.name(),
+            img.width(),
+            img.height(),
+            orig_w,
+            orig_h
         );
 
         // Encode preview of exactly what the model receives
         let preview = {
             let mut png = Vec::new();
             if PngEncoder::new(&mut png)
-                .write_image(img.as_raw(), img.width(), img.height(), image::ExtendedColorType::Rgb8)
+                .write_image(
+                    img.as_raw(),
+                    img.width(),
+                    img.height(),
+                    image::ExtendedColorType::Rgb8,
+                )
                 .is_ok()
             {
                 base64::engine::general_purpose::STANDARD.encode(&png)
@@ -90,11 +99,14 @@ impl Recognizer for OarRecognizer {
         };
 
         let result = match self.pipeline.rec.predict(vec![img]) {
-            Ok(r)  => r,
-            Err(e) => { eprintln!("[oar] predict error: {e}"); return None; }
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!("[oar] predict error: {e}");
+                return None;
+            }
         };
 
-        let text  = result.texts.into_iter().next()?;
+        let text = result.texts.into_iter().next()?;
         let score = result.scores.into_iter().next().unwrap_or(0.0);
 
         eprintln!("[oar] {} result: {:?} conf={score:.3}", self.name(), text);
