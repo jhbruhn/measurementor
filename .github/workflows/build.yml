@@ -23,14 +23,18 @@ jobs:
     name: Build (Linux)
     runs-on: ubuntu-24.04
 
+    env:
+      VCPKG_ROOT: /usr/local/share/vcpkg
+      VCPKG_DEFAULT_TRIPLET: x64-linux-release
+      # playa-ffmpeg's build.rs uses pkg-config on Linux to find the
+      # vcpkg-installed FFmpeg headers and static libs.
+      PKG_CONFIG_PATH: /usr/local/share/vcpkg/installed/x64-linux-release/lib/pkgconfig
+
     steps:
       - uses: actions/checkout@v4
 
-      # System libraries required by Tauri (GTK/WebKit).
-      # FFmpeg and Tesseract are compiled from source (static), so no -dev
-      # packages for either are needed here.
-      # nasm is required by FFmpeg's build system for assembly optimisations.
-      # libclang-dev is needed by ffmpeg-sys-the-third's bindgen step.
+      # System libraries required by Tauri (GTK/WebKit) and by vcpkg when it
+      # compiles FFmpeg from source (nasm, yasm, pkg-config, autotools, clang).
       # libjack0 + libasound2-dev + libpulse-dev + libpipewire-0.3-dev are
       # needed so linuxdeploy can bundle WebKit audio-backend stubs into the
       # AppImage without "Could not find dependency" errors.
@@ -46,11 +50,34 @@ jobs:
             libssl-dev \
             libclang-dev \
             file \
+            clang \
+            curl \
+            pkg-config \
             nasm \
+            yasm \
+            autoconf \
+            automake \
+            libtool \
             libjack0 \
             libasound2-dev \
             libpulse-dev \
             libpipewire-0.3-dev
+
+      # Cache the vcpkg-installed FFmpeg so subsequent runs skip compilation
+      # (~15 min first run, ~3 min thereafter).
+      - name: Cache vcpkg
+        uses: actions/cache@v4
+        with:
+          path: |
+            /usr/local/share/vcpkg/installed
+            /usr/local/share/vcpkg/downloads
+            /usr/local/share/vcpkg/packages
+            ~/.cache/vcpkg
+          key: vcpkg-linux-x64-linux-release-v1
+
+      - name: Install FFmpeg via vcpkg
+        run: |
+          vcpkg install ffmpeg[core,avcodec,avformat,swscale]:x64-linux-release
 
       - uses: actions/setup-node@v4
         with:
@@ -101,43 +128,49 @@ jobs:
     name: Build (Windows)
     runs-on: windows-latest
 
+    env:
+      VCPKG_ROOT: C:\vcpkg
+      VCPKG_DEFAULT_TRIPLET: x64-windows-static-md-release
+      # Tell the vcpkg Rust crate which triplet to look up.
+      VCPKGRS_TRIPLET: x64-windows-static-md-release
+      # bindgen (ffmpeg-sys-next) needs libclang; LLVM is pre-installed on
+      # windows-latest at this path.
+      LIBCLANG_PATH: C:/Program Files/LLVM/bin
+
     steps:
       - uses: actions/checkout@v4
 
-      # ── MSYS2 tools for FFmpeg build ─────────────────────────────────────────
-      # ffmpeg-sys-the-third's `build` feature compiles FFmpeg from source via
-      # configure+make.  The fork at jhbruhn/ffmpeg-the-third (build-windows
-      # branch) wraps the configure invocation with `sh` on Windows so that
-      # CreateProcess can execute it.
-      #
-      # FFmpeg is compiled with clang-cl (--toolchain=msvc) so that the static
-      # libs contain only MSVC-ABI COFF objects — no MinGW runtime symbols
-      # (__mingw_snprintf, ___chkstk_ms, gettimeofday, sincos, mkstemp, …)
-      # that MSVC's link.exe cannot resolve.
-      #
-      # automake provides the `ar-lib` wrapper script which translates GNU-ar
-      # invocations (ar rcs) into llvm-lib syntax so make can create proper
-      # Windows static archives.  nasm and make are required by FFmpeg's build
-      # system.  No MinGW gcc toolchain is needed — clang-cl (pre-installed on
-      # windows-latest via LLVM) is the C compiler.
-      - uses: msys2/setup-msys2@v2
-        with:
-          msystem: MSYS
-          update: false
-          path-type: inherit
-          install: >-
-            nasm
-            make
-
-      # ar-lib is a ~200-line bash script from GNU automake that translates
-      # GNU-ar invocations (ar rcs) into llvm-lib/lib.exe syntax.  Downloading
-      # it directly avoids the need to install a full versioned automake package.
-      - name: Fetch ar-lib
-        shell: msys2 {0}
+      # x64-windows-static-md-release is a community triplet that does not
+      # ship pre-created in vcpkg.  We create it here:
+      #   static library linkage  →  no FFmpeg DLLs needed at runtime
+      #   dynamic CRT linkage     →  /MD, same CRT as the Rust MSVC toolchain
+      #   release-only            →  50% faster vcpkg build
+      - name: Create vcpkg triplet
+        shell: pwsh
         run: |
-          curl -fsL "https://raw.githubusercontent.com/autotools-mirror/automake/v1.16.5/lib/ar-lib" \
-            -o /usr/bin/ar-lib
-          chmod +x /usr/bin/ar-lib
+          $tripletDir = "C:\vcpkg\triplets\community"
+          if (-not (Test-Path $tripletDir)) { New-Item -ItemType Directory -Path $tripletDir }
+          @"
+          set(VCPKG_TARGET_ARCHITECTURE x64)
+          set(VCPKG_CRT_LINKAGE dynamic)
+          set(VCPKG_LIBRARY_LINKAGE static)
+          set(VCPKG_BUILD_TYPE release)
+          "@ | Set-Content "$tripletDir\x64-windows-static-md-release.cmake"
+
+      # Cache the vcpkg-installed FFmpeg so subsequent runs skip compilation
+      # (~10 min first run, ~3 min thereafter).
+      - name: Cache vcpkg
+        uses: actions/cache@v4
+        with:
+          path: |
+            C:\vcpkg\installed
+            C:\vcpkg\downloads
+            C:\vcpkg\packages
+          key: vcpkg-windows-x64-static-md-release-v1
+
+      - name: Install FFmpeg via vcpkg
+        run: |
+          vcpkg install ffmpeg[core,avcodec,avformat,swscale]:x64-windows-static-md-release
 
       # ── Rust / Node ──────────────────────────────────────────────────────────
       - uses: actions/setup-node@v4
@@ -156,14 +189,8 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
-      # ── Build ───────────────────────────────────────────────────────────────
       - name: Build Tauri app
-        shell: msys2 {0}
         run: npm run tauri build
-        env:
-          # bindgen (ffmpeg-sys-the-third) needs libclang; use LLVM pre-installed
-          # on windows-latest (visible via inherited PATH).
-          LIBCLANG_PATH: C:/Program Files/LLVM/bin
 
       - name: Upload NSIS installer
         uses: actions/upload-artifact@v4

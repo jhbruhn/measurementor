@@ -1,6 +1,6 @@
 use base64::Engine;
-use ffmpeg_the_third as ffmpeg;
-use ffmpeg_the_third::{
+use playa_ffmpeg as ffmpeg;
+use playa_ffmpeg::{
     codec::context::Context as CodecCtx,
     format::Pixel,
     frame::Video as VideoFrame,
