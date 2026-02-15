@@ -46,7 +46,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IERBRjJGNzVCMkQzRUVDQzAKUldUQTdENHRXL2Z5MnBIc1NxdUIwVExabEh2Y2QrVHhTd1cvb1FJbFdjaXZlY3U0N2hpcDVNcXQK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEM0NDNBMTIzNTAyQTI1QUMKUldTc0pTcFFJNkZEeEtDWnJPOTZLd0xmRXJhSnhLNFpxMEZLUTlIaUNSbGYyNzdJV2JISkQ4UUoK",
       "endpoints": [
         "https://github.com/jhbruhn/measurementor/releases/latest/download/latest.json"
       ]
