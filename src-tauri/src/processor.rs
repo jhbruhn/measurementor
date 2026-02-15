@@ -38,8 +38,6 @@ pub struct ExtractParams {
     pub preprocess: bool,
     pub filter_numeric: bool,
     pub languages: Vec<String>,
-    pub use_gpu: bool,
-    pub backend: String,
     /// Confidence threshold (0.0–1.0): if the best oar-ocr result is at or
     /// above this value the Tesseract engines are skipped.  Defaults to 0.9.
     #[serde(default = "default_oar_threshold")]

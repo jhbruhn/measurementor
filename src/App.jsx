@@ -416,8 +416,6 @@ function ExtractTab({ vpath, vinfo, keyframes, expectations }) {
           preprocess,
           filter_numeric: filterNumeric,
           languages: lang.split(',').map(s => s.trim()).filter(Boolean),
-          use_gpu: false,
-          backend: '',
           oar_confidence_threshold: oarThreshold / 100,
         },
       });

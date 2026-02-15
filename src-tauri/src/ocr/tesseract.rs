@@ -418,7 +418,7 @@ fn try_ocr(
     psm: u32,
     bpp: i32,
 ) -> Result<(String, f64), ()> {
-    let mut api = TesseractAPI::new();
+    let api = TesseractAPI::new();
     api.init(datadir.unwrap_or(""), lang).map_err(|_| ())?;
     api.set_variable("tessedit_pageseg_mode", &psm.to_string()).map_err(|_| ())?;
     api.set_image(bytes, w as i32, h as i32, bpp, w as i32 * bpp).map_err(|_| ())?;

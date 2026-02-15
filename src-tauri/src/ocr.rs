@@ -184,24 +184,23 @@ fn best_result_constrained<'a>(
         r.confidence * v
     };
 
-    let mut best_idx = valid_indices[0];
-    if filter_numeric {
+    let best_idx = if filter_numeric {
         let numeric_indices: Vec<usize> = valid_indices
             .iter()
             .copied()
             .filter(|&i| clean_number(&results[i].text).parse::<f64>().is_ok())
             .collect();
         let pool = if numeric_indices.is_empty() { &valid_indices } else { &numeric_indices };
-        best_idx = *pool
+        *pool
             .iter()
             .max_by(|&&a, &&b| score(&results[a]).partial_cmp(&score(&results[b])).unwrap_or(std::cmp::Ordering::Equal))
-            .unwrap_or(&valid_indices[0]);
+            .unwrap_or(&valid_indices[0])
     } else {
-        best_idx = *valid_indices
+        *valid_indices
             .iter()
             .max_by(|&&a, &&b| score(&results[a]).partial_cmp(&score(&results[b])).unwrap_or(std::cmp::Ordering::Equal))
-            .unwrap_or(&valid_indices[0]);
-    }
+            .unwrap_or(&valid_indices[0])
+    };
 
     Some(&results[best_idx])
 }
