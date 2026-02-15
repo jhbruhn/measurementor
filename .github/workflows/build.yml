@@ -200,28 +200,25 @@ jobs:
           if-no-files-found: error
 
   # ────────────────────────────────────────────────────────────────────────────
-  # macOS  →  .dmg  (arm64 on macos-latest, x86_64 on macos-13)
+  # macOS  →  .dmg  (arm64, macos-latest)
+  # Note: macos-13 (Intel) runners are retired; arm64 covers all modern Macs.
+  # Intel users can run the arm64 build via Rosetta 2.
   # ────────────────────────────────────────────────────────────────────────────
   build-macos:
-    name: Build (macOS ${{ matrix.arch }})
-    runs-on: ${{ matrix.runner }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: arm64
-            runner: macos-latest
-            vcpkg_triplet: arm64-osx-release
-          - arch: x86_64
-            runner: macos-13
-            vcpkg_triplet: x64-osx-release
+    name: Build (macOS arm64)
+    runs-on: macos-latest
 
     env:
       VCPKG_ROOT: /usr/local/share/vcpkg
-      VCPKG_DEFAULT_TRIPLET: ${{ matrix.vcpkg_triplet }}
+      VCPKG_DEFAULT_TRIPLET: arm64-osx-release
       # playa-ffmpeg's build.rs uses pkg-config on macOS to locate the
       # vcpkg-installed FFmpeg headers and static libs.
-      PKG_CONFIG_PATH: /usr/local/share/vcpkg/installed/${{ matrix.vcpkg_triplet }}/lib/pkgconfig
+      PKG_CONFIG_PATH: /usr/local/share/vcpkg/installed/arm64-osx-release/lib/pkgconfig
+      # kreuzberg-tesseract compiles Tesseract from source via CMake; without
+      # an explicit deployment target the compiler defaults below 10.15 and
+      # marks std::filesystem (recursive_directory_iterator, path, etc.) as
+      # unavailable.  14.0 matches the macos-latest runner OS.
+      MACOSX_DEPLOYMENT_TARGET: "14.0"
 
     steps:
       - uses: actions/checkout@v4
@@ -241,10 +238,10 @@ jobs:
             /usr/local/share/vcpkg/downloads
             /usr/local/share/vcpkg/packages
             ~/.cache/vcpkg
-          key: vcpkg-macos-${{ matrix.vcpkg_triplet }}-v1
+          key: vcpkg-macos-arm64-osx-release-v1
 
       - name: Install FFmpeg via vcpkg
-        run: vcpkg install ffmpeg[core,avcodec,avformat,swscale]:${{ matrix.vcpkg_triplet }}
+        run: vcpkg install ffmpeg[core,avcodec,avformat,swscale]:arm64-osx-release
 
       - uses: actions/setup-node@v4
         with:
@@ -268,7 +265,7 @@ jobs:
       - name: Upload DMG
         uses: actions/upload-artifact@v4
         with:
-          name: Measurementor-macos-${{ matrix.arch }}-dmg
+          name: Measurementor-macos-arm64-dmg
           path: src-tauri/target/release/bundle/dmg/*.dmg
           if-no-files-found: error
           compression-level: 0 # DMGs are already compressed
