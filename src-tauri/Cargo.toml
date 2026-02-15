@@ -27,6 +27,6 @@ image = { version = "0.25", features = ["jpeg", "png"] }
 imageproc = "0.26"
 oar-ocr = { version = "0.6", default-features = false, features = [] }
 anyhow = "1"
-playa-ffmpeg = { git = "https://github.com/ssoj13/playa-ffmpeg", default-features = false, features = ["codec", "format", "software-scaling"] }
+playa-ffmpeg = { version = "8.0.3", default-features = false, features = ["codec", "format", "software-scaling"] }
 rayon = "1"
 kreuzberg-tesseract = "4"
