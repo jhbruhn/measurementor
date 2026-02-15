@@ -1,26 +1,48 @@
-name: Build
+name: Release
 
 on:
   push:
-    branches: [main]
-  pull_request:
-    branches: [main]
-
-# Cancel in-flight runs for the same branch/PR so pushes don't queue up.
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+    tags:
+      - 'v*'
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
   # ────────────────────────────────────────────────────────────────────────────
+  # Look up the draft release that release-drafter prepared for this tag.
+  # ────────────────────────────────────────────────────────────────────────────
+  find-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      release_id: ${{ steps.find.outputs.result }}
+
+    steps:
+      - name: Find draft release by tag
+        id: find
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const tag = context.ref.replace('refs/tags/', '')
+            const releases = await github.rest.repos.listReleases({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+            })
+            const release = releases.data.find(r => r.tag_name === tag)
+            if (!release) throw new Error(`No release found for tag ${tag}`)
+            return release.id
+
+  # ────────────────────────────────────────────────────────────────────────────
   # Linux  →  AppImage  +  .deb  +  .rpm
   # ────────────────────────────────────────────────────────────────────────────
   build-linux:
-    name: Build (Linux)
+    needs: [find-release]
+    name: Release (Linux)
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write
 
     env:
       VCPKG_ROOT: /usr/local/share/vcpkg
@@ -91,13 +113,19 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           APPIMAGE_EXTRACT_AND_RUN: "1"
           NO_STRIP: "true"
+        with:
+          tagName: v__VERSION__
+          releaseId: ${{ needs.find-release.outputs.release_id }}
 
   # ────────────────────────────────────────────────────────────────────────────
   # Windows  →  NSIS installer (.exe)
   # ────────────────────────────────────────────────────────────────────────────
   build-windows:
-    name: Build (Windows)
+    needs: [find-release]
+    name: Release (Windows)
     runs-on: windows-latest
+    permissions:
+      contents: write
 
     env:
       VCPKG_ROOT: C:\vcpkg
@@ -152,13 +180,19 @@ jobs:
       - uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: v__VERSION__
+          releaseId: ${{ needs.find-release.outputs.release_id }}
 
   # ────────────────────────────────────────────────────────────────────────────
   # macOS  →  .dmg  (arm64)
   # ────────────────────────────────────────────────────────────────────────────
   build-macos:
-    name: Build (macOS arm64)
+    needs: [find-release]
+    name: Release (macOS arm64)
     runs-on: macos-latest
+    permissions:
+      contents: write
 
     env:
       VCPKG_ROOT: /usr/local/share/vcpkg
@@ -206,3 +240,29 @@ jobs:
       - uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: v__VERSION__
+          releaseId: ${{ needs.find-release.outputs.release_id }}
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # Publish the release once all builds have uploaded their bundles.
+  # ────────────────────────────────────────────────────────────────────────────
+  publish-release:
+    needs: [find-release, build-linux, build-windows, build-macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Publish release
+        uses: actions/github-script@v7
+        env:
+          RELEASE_ID: ${{ needs.find-release.outputs.release_id }}
+        with:
+          script: |
+            github.rest.repos.updateRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: process.env.RELEASE_ID,
+              draft: false,
+            })
