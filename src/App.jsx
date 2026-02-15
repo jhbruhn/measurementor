@@ -77,18 +77,26 @@ function SeekBar({ ts, vinfo, keyframes, onChange }) {
   const step = vinfo ? (1 / vinfo.fps).toFixed(4) : 0.033;
   const onKf = keyframes.some(kf => Math.abs(kf.timestamp - ts) < 0.001);
 
+  const sorted = [...keyframes].sort((a, b) => a.timestamp - b.timestamp);
+  const startTs = sorted[0]?.timestamp;
+  const endTs   = sorted[sorted.length - 1]?.timestamp;
+
   return (
     <div className="flex flex-col gap-1.5">
       <div className="relative">
         <div className="absolute inset-0 pointer-events-none" aria-hidden="true">
-          {keyframes.map((kf, i) => (
-            <div
-              key={i}
-              className="seek-tick"
-              style={{ left: `${(kf.timestamp / max) * 100}%` }}
-              title={`Keyframe at ${kf.timestamp.toFixed(2)}s`}
-            />
-          ))}
+          {keyframes.map((kf, i) => {
+            const isStart = sorted.length >= 2 && kf.timestamp === startTs;
+            const isEnd   = sorted.length >= 2 && kf.timestamp === endTs;
+            return (
+              <div
+                key={i}
+                className={'seek-tick' + (isStart ? ' seek-tick-start' : isEnd ? ' seek-tick-end' : '')}
+                style={{ left: `${(kf.timestamp / max) * 100}%` }}
+                title={isStart ? `Start at ${kf.timestamp.toFixed(2)}s` : isEnd ? `End at ${kf.timestamp.toFixed(2)}s` : `Keyframe at ${kf.timestamp.toFixed(2)}s`}
+              />
+            );
+          })}
         </div>
         <input
           type="range"
@@ -284,29 +292,45 @@ function Sidebar({
         <div className="flex flex-col gap-1">
           {!keyframes.length
             ? <span className="text-xs text-gray-400">No keyframes yet.</span>
-            : [...keyframes].sort((a, b) => a.timestamp - b.timestamp).map((kf, i) => {
-              const active = Math.abs(kf.timestamp - ts) < 0.001;
-              return (
-                <div
-                  key={i}
-                  className={
-                    'flex items-center gap-1.5 rounded px-2 py-1 text-xs border ' +
-                    (active
-                      ? 'bg-green-50 border-green-200 text-green-800'
-                      : 'bg-white border-gray-100 text-gray-700')
-                  }
-                >
-                  <span
-                    className="flex-1 font-mono cursor-pointer hover:underline"
-                    onClick={() => onSeekTo(kf.timestamp)}
-                  >
-                    t={kf.timestamp.toFixed(2)}s
-                  </span>
-                  <span className="text-gray-400">{kf.regions.length} pos</span>
-                  <Btn variant="ghost" onClick={() => onDeleteKf(kf.timestamp)}>✕</Btn>
-                </div>
-              );
-            })
+            : (() => {
+                const sorted = [...keyframes].sort((a, b) => a.timestamp - b.timestamp);
+                const hasRange = sorted.length >= 2;
+                return sorted.map((kf, i) => {
+                  const active   = Math.abs(kf.timestamp - ts) < 0.001;
+                  const isStart  = hasRange && i === 0;
+                  const isEnd    = hasRange && i === sorted.length - 1;
+                  return (
+                    <div
+                      key={i}
+                      className={
+                        'flex items-center gap-1.5 rounded px-2 py-1 text-xs border ' +
+                        (active
+                          ? 'bg-green-50 border-green-200 text-green-800'
+                          : 'bg-white border-gray-100 text-gray-700')
+                      }
+                    >
+                      {isStart && (
+                        <span className="shrink-0 px-1 py-0.5 rounded text-[10px] font-semibold bg-green-100 text-green-700 uppercase tracking-wide">
+                          Start
+                        </span>
+                      )}
+                      {isEnd && (
+                        <span className="shrink-0 px-1 py-0.5 rounded text-[10px] font-semibold bg-red-100 text-red-700 uppercase tracking-wide">
+                          End
+                        </span>
+                      )}
+                      <span
+                        className="flex-1 font-mono cursor-pointer hover:underline"
+                        onClick={() => onSeekTo(kf.timestamp)}
+                      >
+                        t={kf.timestamp.toFixed(2)}s
+                      </span>
+                      <span className="text-gray-400">{kf.regions.length} pos</span>
+                      <Btn variant="ghost" onClick={() => onDeleteKf(kf.timestamp)}>✕</Btn>
+                    </div>
+                  );
+                });
+              })()
           }
         </div>
       </Card>
