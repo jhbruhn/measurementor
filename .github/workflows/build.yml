@@ -136,8 +136,8 @@ jobs:
         shell: msys2 {0}
         run: |
           curl -fsL "https://raw.githubusercontent.com/autotools-mirror/automake/v1.16.5/lib/ar-lib" \
-            -o /usr/local/bin/ar-lib
-          chmod +x /usr/local/bin/ar-lib
+            -o /usr/bin/ar-lib
+          chmod +x /usr/bin/ar-lib
 
       # ── Rust / Node ──────────────────────────────────────────────────────────
       - uses: actions/setup-node@v4
