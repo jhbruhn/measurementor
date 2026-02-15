@@ -86,7 +86,7 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
-      - uses: tauri-apps/tauri-action@v1
+      - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           APPIMAGE_EXTRACT_AND_RUN: "1"
@@ -149,7 +149,7 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
-      - uses: tauri-apps/tauri-action@v1
+      - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -203,6 +203,6 @@ jobs:
       - name: Clear kreuzberg-tesseract cmake cache
         run: rm -rf src-tauri/target/kreuzberg-tesseract-cache
 
-      - uses: tauri-apps/tauri-action@v1
+      - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
