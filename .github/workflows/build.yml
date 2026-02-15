@@ -108,17 +108,36 @@ jobs:
       # ffmpeg-sys-the-third's `build` feature compiles FFmpeg from source via
       # configure+make.  The fork at jhbruhn/ffmpeg-the-third (build-windows
       # branch) wraps the configure invocation with `sh` on Windows so that
-      # CreateProcess can execute it.  MSYS2 provides sh, make, nasm, and gcc.
-      # MSVC Rust target is kept so oar-ocr/ort (MSVC-only on Windows) works.
+      # CreateProcess can execute it.
+      #
+      # FFmpeg is compiled with clang-cl (--toolchain=msvc) so that the static
+      # libs contain only MSVC-ABI COFF objects — no MinGW runtime symbols
+      # (__mingw_snprintf, ___chkstk_ms, gettimeofday, sincos, mkstemp, …)
+      # that MSVC's link.exe cannot resolve.
+      #
+      # automake provides the `ar-lib` wrapper script which translates GNU-ar
+      # invocations (ar rcs) into llvm-lib syntax so make can create proper
+      # Windows static archives.  nasm and make are required by FFmpeg's build
+      # system.  No MinGW gcc toolchain is needed — clang-cl (pre-installed on
+      # windows-latest via LLVM) is the C compiler.
       - uses: msys2/setup-msys2@v2
         with:
-          msystem: MINGW64
+          msystem: MSYS
           update: false
           path-type: inherit
           install: >-
             nasm
             make
-            mingw-w64-x86_64-toolchain
+
+      # ar-lib is a ~200-line bash script from GNU automake that translates
+      # GNU-ar invocations (ar rcs) into llvm-lib/lib.exe syntax.  Downloading
+      # it directly avoids the need to install a full versioned automake package.
+      - name: Fetch ar-lib
+        shell: msys2 {0}
+        run: |
+          curl -fsL "https://raw.githubusercontent.com/autotools-mirror/automake/v1.16.5/lib/ar-lib" \
+            -o /usr/local/bin/ar-lib
+          chmod +x /usr/local/bin/ar-lib
 
       # ── Rust / Node ──────────────────────────────────────────────────────────
       - uses: actions/setup-node@v4

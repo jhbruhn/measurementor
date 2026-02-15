@@ -1303,7 +1303,7 @@ dependencies = [
 [[package]]
 name = "ffmpeg-sys-the-third"
 version = "4.0.0+ffmpeg-8.0"
-source = "git+https://github.com/shssoichiro/ffmpeg-the-third#b4ec43be8eef2d699c774cf496b440b5a2a9bce5"
+source = "git+https://github.com/jhbruhn/ffmpeg-the-third?branch=build-windows#54b537485c02e79cb31fa09ef949c8aaa5eb3366"
 dependencies = [
  "bindgen",
  "cc",
@@ -1316,7 +1316,7 @@ dependencies = [
 [[package]]
 name = "ffmpeg-the-third"
 version = "4.0.1+ffmpeg-8.0"
-source = "git+https://github.com/shssoichiro/ffmpeg-the-third#b4ec43be8eef2d699c774cf496b440b5a2a9bce5"
+source = "git+https://github.com/jhbruhn/ffmpeg-the-third?branch=build-windows#54b537485c02e79cb31fa09ef949c8aaa5eb3366"
 dependencies = [
  "bitflags 2.10.0",
  "ffmpeg-sys-the-third",
@@ -5559,7 +5559,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0136791f7c95b1f6dd99f9cc786b91bb81c3800b639b3478e561ddb7be95e5f1"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.1",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",
