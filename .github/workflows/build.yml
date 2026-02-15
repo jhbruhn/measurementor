@@ -259,6 +259,17 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
+      # kreuzberg-tesseract builds Tesseract via the cmake Rust crate, which
+      # skips cmake reconfigure if CMakeCache.txt already exists (cmake crate
+      # 0.1.57 line: "if self.always_configure || !CMakeCache.txt.exists()").
+      # If cache-on-failure restored a stale CMakeCache.txt from a previous run
+      # that lacked MACOSX_DEPLOYMENT_TARGET, cmake would reuse the old flags
+      # and CXX compilation would get "unknown" deployment target → std::filesystem
+      # unavailable.  Deleting the cache dir forces a clean cmake configure that
+      # picks up MACOSX_DEPLOYMENT_TARGET=14.0 from the environment.
+      - name: Clear kreuzberg-tesseract cmake cache
+        run: rm -rf src-tauri/target/kreuzberg-tesseract-cache
+
       - name: Build Tauri app
         run: npm run tauri build
 
