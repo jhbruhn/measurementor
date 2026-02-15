@@ -38,6 +38,9 @@
     "resources": {
       "models/*": "models/",
       "tessdata/*": "tessdata/"
+    },
+    "macOS": {
+      "minimumSystemVersion": "14.0"
     }
   },
   "plugins": {}
