@@ -214,11 +214,6 @@ jobs:
       # playa-ffmpeg's build.rs uses pkg-config on macOS to locate the
       # vcpkg-installed FFmpeg headers and static libs.
       PKG_CONFIG_PATH: /usr/local/share/vcpkg/installed/arm64-osx-release/lib/pkgconfig
-      # kreuzberg-tesseract compiles Tesseract from source via CMake; without
-      # an explicit deployment target the compiler defaults below 10.15 and
-      # marks std::filesystem (recursive_directory_iterator, path, etc.) as
-      # unavailable.  14.0 matches the macos-latest runner OS.
-      MACOSX_DEPLOYMENT_TARGET: "14.0"
 
     steps:
       - uses: actions/checkout@v4
